@@ -2,8 +2,8 @@
 Quest 3 AR Stick Handling Game
 
 
-What it does
-
+**What it does
+**
 Passthrough: it requests immersive-ar with the local-floor reference space, so Y = 0 is your real floor. The renderer clears to transparent, so you see your tiles.
 Obstacles: red cylinder defenders (with a head), orange pylons and red/white block barriers spawn 4 m ahead at floor level. They slide toward your feet and are removed just behind you.
 Lanes: each obstacle is randomly Left, Middle or Right (±0.6 m). The code makes it a bit less likely to repeat the same lane back to back.
