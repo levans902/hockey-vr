@@ -23,7 +23,7 @@ It is a single `index.html` file built with [Three.js](https://threejs.org/) and
 
 ## Quick start
 
-1. Open the hosted page in the Meta Quest Browser.
+1. Open the hosted page in the Meta Quest Browser - https://levans902.github.io/hockey-vr/
 2. Tap **Enter Mixed Reality** and allow the permission prompt.
 3. Stand where you want to train and face the direction the obstacles should come from. The play area anchors to your position and facing when you enter.
 4. Use a controller ray or a hand pinch on the floating panel to choose your settings, then press **START**.
