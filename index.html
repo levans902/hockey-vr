@@ -3,7 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Stickhandling MR</title>
+<title>SickMitts VR</title>
+<meta name="theme-color" content="#0b1220">
+<meta name="apple-mobile-web-app-title" content="SickMitts VR">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="48x48" href="favicon-48.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <style>
   html, body { margin:0; height:100%; background:#0b1220; color:#fff;
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
@@ -22,7 +28,7 @@
 </head>
 <body>
 <div id="ui">
-  <h1>🏒 Stickhandling MR</h1>
+  <h1>🏒 SickMitts VR</h1>
   <p>Clear your floor, put on your Quest 3, and tap below. Water bottles, pylons, dynamite, skates, gloves and mini nets
      will slide toward your feet. Read them early and stickhandle through the gaps. Point a controller (or pinch with
      your hand) at the floating panel to pick lanes, difficulty (Easy, Medium, Hard, Pro) and speed, then start.</p>
@@ -61,7 +67,7 @@ const CONFIG = {
   proShiftChance: 0.45,        // chance per spawn that the guaranteed open lane drifts
   panelWidth: 1.0,             // metres
   panelDistance: 1.0,          // metres in front of the player
-  panelHeightOffset: 0.12      // relative to head height at (re)center (raise to move the panel up)
+  panelHeightOffset: -0.03     // relative to head height at (re)center (raise to move the panel up)
 };
 
 /* ============================== STATE ============================== */
