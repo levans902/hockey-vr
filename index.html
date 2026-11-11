@@ -34,10 +34,14 @@
      your hand) at the floating panel to pick lanes, difficulty (Easy, Medium, Hard, Pro) and speed, then start.</p>
   <button id="enter" disabled>Checking MR support…</button>
   <div id="msg"></div>
+  <div id="build" style="color:#5f7391;font-size:.8rem"></div>
 </div>
 
 <script type="module">
 import * as THREE from 'three';
+
+const BUILD = 'pro-gap-fix-3';   // shown on the start screen and panel so you can tell which copy is loaded
+document.getElementById('build').textContent = 'build ' + BUILD;
 
 /* ============================== CONFIG ============================== */
 const CONFIG = {
@@ -64,7 +68,10 @@ const CONFIG = {
   proMinInterval: 0.2,         // seconds, hard floor between PRO spawns
   proMinDepthGap: 0.75,        // metres of clear floor between objects in the same lane
   proShiftTime: 0.7,           // seconds the player is guaranteed to shift one lane in PRO
-  proShiftChance: 0.45,        // chance per spawn that the guaranteed open lane drifts
+  proShiftChance: 0.6,         // chance per spawn that the guaranteed open lane drifts
+  proMaxSafeHold: 1.2,         // seconds the open lane may stay put before it MUST move
+  proStarve: 2.0,              // a lane empty longer than this can't become the open lane
+  proMaxEmpty: 2.6,            // seconds: any lane empty this long gets the next object
   panelWidth: 1.0,             // metres
   panelDistance: 1.0,          // metres in front of the player
   panelHeightOffset: -0.03     // relative to head height at (re)center (raise to move the panel up)
@@ -85,11 +92,12 @@ const state = {
   hovered: null
 };
 /* PRO difficulty bookkeeping (times are in run-seconds, i.e. state.elapsed) */
-const pro = { lastSpawn: [], lockedUntil: [], lastSwitch: -99 };
+const pro = { lastSpawn: [], lockedUntil: [], lastSwitch: -99, safeSince: 0 };
 function resetPro() {
-  pro.lastSpawn = Array(state.lanes).fill(-99);
+  pro.lastSpawn = Array(state.lanes).fill(state.elapsed);
   pro.lockedUntil = Array(state.lanes).fill(-99);
   pro.lastSwitch = -99;
+  pro.safeSince = state.elapsed;
   state.safeLane = Math.floor(state.lanes / 2);
 }
 const speedFor = lvl => CONFIG.baseSpeed + lvl * CONFIG.speedStep;
@@ -373,38 +381,64 @@ function planRow() {
   return cands.slice(0, k);
 }
 /* PRO: no waves. Single objects appear at random times in random lanes, so the floor looks
-   like a scattered obstacle field. Passability is guaranteed by a hidden "open lane" that:
-   - never receives objects,
-   - may drift one lane at a time, only after the new lane has been object-free for proShiftTime,
-   - leaves the old lane object-free for proShiftTime after the drift,
-   so a good player always has at least proShiftTime to move over. */
+   like a scattered obstacle field. Two rules work together:
+
+   PASSABLE  - a hidden "open lane" never receives objects. It drifts one lane at a time, only
+               after the new lane has been object-free for proShiftTime, and the lane it leaves
+               stays object-free for proShiftTime. A good player always has time to move over.
+   NO HIDING - the open lane must move after proMaxSafeHold seconds, a lane that has been empty
+               longer than proStarve can't become the open lane, lane choice favours lanes that
+               have been empty the longest, and any lane empty for proMaxEmpty seconds gets the
+               very next object. So no lane stays empty for long, and parking in one lane fails. */
 function spawnPro() {
   const n = state.lanes, now = state.elapsed, speed = speedFor(state.level);
+  const gap = l => now - pro.lastSpawn[l];
 
-  if (now - pro.lastSwitch >= CONFIG.proShiftTime * 1.2 && Math.random() < CONFIG.proShiftChance) {
-    const opts = [state.safeLane - 1, state.safeLane + 1]
-      .filter(l => l >= 0 && l < n && now - pro.lastSpawn[l] >= CONFIG.proShiftTime);
+  // 1. let the open lane drift (forced if it has been parked too long)
+  const mustMove = now - pro.safeSince >= CONFIG.proMaxSafeHold;
+  if (now - pro.lastSwitch >= CONFIG.proShiftTime * 1.2 && (mustMove || Math.random() < CONFIG.proShiftChance)) {
+    const opts = [state.safeLane - 1, state.safeLane + 1].filter(l =>
+      l >= 0 && l < n && gap(l) >= CONFIG.proShiftTime &&
+      gap(l) <= (mustMove ? CONFIG.proMaxEmpty : CONFIG.proStarve));
     if (opts.length) {
       pro.lockedUntil[state.safeLane] = now + CONFIG.proShiftTime;
       state.safeLane = opts[randInt(0, opts.length - 1)];
       pro.lastSwitch = now;
+      pro.safeSince = now;
     }
   }
+  const pending = now - pro.safeSince >= CONFIG.proMaxSafeHold;
 
+  // 2. which lanes can take an object right now?
   const minT = CONFIG.proMinDepthGap / speed;
-  const elig = [];
+  let elig = [];
   for (let l = 0; l < n; l++) {
-    if (l !== state.safeLane && now >= pro.lockedUntil[l] && now - pro.lastSpawn[l] >= minT) elig.push(l);
+    if (l !== state.safeLane && now >= pro.lockedUntil[l] && gap(l) >= minT) elig.push(l);
   }
-  if (elig.length) {
-    const lane = elig[randInt(0, elig.length - 1)];
+  if (pending) {   // keep the open lane's neighbours calm so the drift can happen
+    const calm = elig.filter(l => Math.abs(l - state.safeLane) !== 1 || gap(l) >= CONFIG.proMaxEmpty);
+    if (calm.length) elig = calm;
+  }
+
+  // 3. pick: starved lanes first, otherwise random weighted toward lanes empty the longest
+  let lane = -1;
+  const overdue = elig.filter(l => gap(l) >= CONFIG.proMaxEmpty);
+  if (overdue.length) {
+    lane = overdue.reduce((best, l) => (gap(l) > gap(best) ? l : best));
+  } else if (elig.length) {
+    const w = elig.map(l => 0.4 + gap(l));
+    let r = Math.random() * w.reduce((a, b) => a + b, 0);
+    lane = elig[elig.length - 1];
+    for (let i = 0; i < elig.length; i++) { r -= w[i]; if (r <= 0) { lane = elig[i]; break; } }
+  }
+  if (lane >= 0) {
     spawnAt(lane);
     pro.lastSpawn[lane] = now;
   }
 
   const mean = intervalFor(state.level) / (Math.ceil(n / 2) + CONFIG.proExtra);
-  const [a, b] = CONFIG.proIntervalJitter;
-  state.nextInterval = Math.max(CONFIG.proMinInterval, mean * (a + Math.random() * (b - a)));
+  const [lo, hi] = CONFIG.proIntervalJitter;
+  state.nextInterval = Math.max(CONFIG.proMinInterval, mean * (lo + Math.random() * (hi - lo)));
 }
 
 function spawnRow() {
@@ -477,6 +511,9 @@ function drawPanel() {
   ctx.fillStyle = '#ffd166'; ctx.font = '600 34px system-ui, sans-serif';
   ctx.fillText('Level ' + state.level + '  ·  ' + speedFor(state.level).toFixed(1) + ' m/s  ·  Passed ' + state.passed,
     CW / 2, 178);
+
+  ctx.fillStyle = '#5f7391'; ctx.font = '500 20px system-ui, sans-serif';
+  ctx.fillText('build ' + BUILD, CW / 2, 616);
 
   ctx.textAlign = 'left'; ctx.fillStyle = '#9fb3d1'; ctx.font = '700 28px system-ui, sans-serif';
   ctx.fillText('LANES', 40, 368);
