@@ -25,7 +25,7 @@
   <h1>🏒 Stickhandling MR</h1>
   <p>Clear your floor, put on your Quest 3, and tap below. Water bottles, pylons, dynamite, skates, gloves and mini nets
      will slide toward your feet. Read them early and stickhandle through the gaps. Point a controller (or pinch with
-     your hand) at the floating panel to pick lanes, difficulty and speed, then start.</p>
+     your hand) at the floating panel to pick lanes, difficulty (Easy, Medium, Hard, Pro) and speed, then start.</p>
   <button id="enter" disabled>Checking MR support…</button>
   <div id="msg"></div>
 </div>
@@ -41,7 +41,7 @@ const CONFIG = {
   laneGuideWidth: 0.5,         // width of the floor guide strips
   laneOptions: [3, 4, 5],
   startLanes: 3,
-  difficulties: ['easy', 'medium', 'hard'],
+  difficulties: ['easy', 'medium', 'hard', 'pro'],
   startDifficulty: 'easy',
   baseSpeed: 0.7,              // m/s at level 0
   speedStep: 0.3,              // extra m/s per level
@@ -53,9 +53,15 @@ const CONFIG = {
   spawnIntervalMin: 0.8,
   hardIntervalJitter: [0.85, 1.3], // random multiplier on the row interval in HARD
   hardDepthJitter: 0.2,        // metres of random front/back offset per object in HARD
+  proExtra: 1,                 // PRO density: objects per base interval = ceil(lanes/2) + this
+  proIntervalJitter: [0.3, 1.7], // random multiplier on the time between PRO spawns
+  proMinInterval: 0.2,         // seconds, hard floor between PRO spawns
+  proMinDepthGap: 0.75,        // metres of clear floor between objects in the same lane
+  proShiftTime: 0.7,           // seconds the player is guaranteed to shift one lane in PRO
+  proShiftChance: 0.45,        // chance per spawn that the guaranteed open lane drifts
   panelWidth: 1.0,             // metres
   panelDistance: 1.0,          // metres in front of the player
-  panelHeightOffset: -0.18     // relative to head height at (re)center
+  panelHeightOffset: 0.12      // relative to head height at (re)center (raise to move the panel up)
 };
 
 /* ============================== STATE ============================== */
@@ -72,6 +78,14 @@ const state = {
   needsPlace: true,
   hovered: null
 };
+/* PRO difficulty bookkeeping (times are in run-seconds, i.e. state.elapsed) */
+const pro = { lastSpawn: [], lockedUntil: [], lastSwitch: -99 };
+function resetPro() {
+  pro.lastSpawn = Array(state.lanes).fill(-99);
+  pro.lockedUntil = Array(state.lanes).fill(-99);
+  pro.lastSwitch = -99;
+  state.safeLane = Math.floor(state.lanes / 2);
+}
 const speedFor = lvl => CONFIG.baseSpeed + lvl * CONFIG.speedStep;
 const intervalFor = lvl => Math.max(CONFIG.spawnIntervalMin,
   CONFIG.spawnIntervalBase - lvl * CONFIG.spawnIntervalPerLevel);
@@ -88,7 +102,7 @@ const SAVE_KEY = 'stickMR.v2';
     if (CONFIG.difficulties.includes(s.difficulty)) state.difficulty = s.difficulty;
     if (Number.isInteger(s.level)) state.level = clamp(s.level, CONFIG.minLevel, CONFIG.maxLevel);
   } catch (e) {}
-  state.safeLane = Math.floor(state.lanes / 2);
+  resetPro();
 })();
 function saveSettings() {
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(
@@ -352,7 +366,43 @@ function planRow() {
   }
   return cands.slice(0, k);
 }
+/* PRO: no waves. Single objects appear at random times in random lanes, so the floor looks
+   like a scattered obstacle field. Passability is guaranteed by a hidden "open lane" that:
+   - never receives objects,
+   - may drift one lane at a time, only after the new lane has been object-free for proShiftTime,
+   - leaves the old lane object-free for proShiftTime after the drift,
+   so a good player always has at least proShiftTime to move over. */
+function spawnPro() {
+  const n = state.lanes, now = state.elapsed, speed = speedFor(state.level);
+
+  if (now - pro.lastSwitch >= CONFIG.proShiftTime * 1.2 && Math.random() < CONFIG.proShiftChance) {
+    const opts = [state.safeLane - 1, state.safeLane + 1]
+      .filter(l => l >= 0 && l < n && now - pro.lastSpawn[l] >= CONFIG.proShiftTime);
+    if (opts.length) {
+      pro.lockedUntil[state.safeLane] = now + CONFIG.proShiftTime;
+      state.safeLane = opts[randInt(0, opts.length - 1)];
+      pro.lastSwitch = now;
+    }
+  }
+
+  const minT = CONFIG.proMinDepthGap / speed;
+  const elig = [];
+  for (let l = 0; l < n; l++) {
+    if (l !== state.safeLane && now >= pro.lockedUntil[l] && now - pro.lastSpawn[l] >= minT) elig.push(l);
+  }
+  if (elig.length) {
+    const lane = elig[randInt(0, elig.length - 1)];
+    spawnAt(lane);
+    pro.lastSpawn[lane] = now;
+  }
+
+  const mean = intervalFor(state.level) / (Math.ceil(n / 2) + CONFIG.proExtra);
+  const [a, b] = CONFIG.proIntervalJitter;
+  state.nextInterval = Math.max(CONFIG.proMinInterval, mean * (a + Math.random() * (b - a)));
+}
+
 function spawnRow() {
+  if (state.difficulty === 'pro') { spawnPro(); return; }
   const hard = state.difficulty === 'hard';
   planRow().forEach(lane => {
     const zj = hard ? (Math.random() * 2 - 1) * CONFIG.hardDepthJitter : 0;
@@ -381,9 +431,9 @@ const buttons = [
   { id: 'slower',   x: 40,  y: 215, w: 200, h: 100, label: '−  SPEED' },
   { id: 'toggle',   x: 262, y: 215, w: 500, h: 100, label: '' },
   { id: 'faster',   x: 784, y: 215, w: 200, h: 100, label: 'SPEED  +' },
-  ...CONFIG.laneOptions.map((n, i) => ({ id: 'lanes' + n, x: 240 + i * 234, y: 332, w: 220, h: 70,
+  ...CONFIG.laneOptions.map((n, i) => ({ id: 'lanes' + n, x: 215 + i * 194, y: 332, w: 184, h: 70,
       label: n + ' LANES', sel: () => state.lanes === n })),
-  ...CONFIG.difficulties.map((d, i) => ({ id: 'diff' + d, x: 240 + i * 234, y: 418, w: 220, h: 70,
+  ...CONFIG.difficulties.map((d, i) => ({ id: 'diff' + d, x: 215 + i * 194, y: 418, w: 184, h: 70,
       label: d.toUpperCase(), sel: () => state.difficulty === d })),
   { id: 'reset',    x: 40,  y: 508, w: 300, h: 80,  label: 'RESET' },
   { id: 'recenter', x: 684, y: 508, w: 300, h: 80,  label: 'RECENTER' }
@@ -455,7 +505,7 @@ drawPanel();
 function resetRun() {
   state.mode = 'idle'; state.elapsed = 0; state.passed = 0;
   state.spawnTimer = 0; state.nextInterval = 0.5;
-  state.safeLane = Math.floor(state.lanes / 2);
+  resetPro();
   clearObstacles();
   lastTimerText = '';
 }
@@ -465,14 +515,14 @@ function pressButton(id) {
     const n = parseInt(id.slice(5), 10);
     if (n !== state.lanes) {
       state.lanes = n; rebuildLanes();
-      state.safeLane = Math.floor(n / 2);
+      resetPro();
       clearObstacles(); state.spawnTimer = 0; state.nextInterval = 0.5;
       saveSettings();
     }
   } else if (id.startsWith('diff')) {
     const d = id.slice(4);
     if (d !== state.difficulty) {
-      state.difficulty = d; state.safeLane = Math.floor(state.lanes / 2);
+      state.difficulty = d; resetPro();
       saveSettings();
     }
   } else {
