@@ -29,9 +29,7 @@
 <body>
 <div id="ui">
   <h1>🏒 SickMitts VR</h1>
-  <p>Clear your floor, put on your Quest 3, and tap below. Water bottles, pylons, dynamite, skates, gloves and mini nets
-     will slide toward your feet. Read them early and stickhandle through the gaps. Point a controller (or pinch with
-     your hand) at the floating panel to pick lanes, difficulty (Easy, Medium, Hard, Pro) and speed, then start.</p>
+  <p>Clear your floor, put on your Quest 3, and tap below. Pick a game on the floating panel: <b>Endless Object Treadmill</b> sends water bottles, pylons, dynamite, skates, gloves and mini nets sliding at your feet, and <b>Keep Away</b> puts opposing defencemen on the ice around you, skating, circling and attacking your puck. Point a controller (or pinch with your hand) at the panel to choose lanes, difficulty and speed, then start.</p>
   <button id="enter" disabled>Checking MR support…</button>
   <div id="msg"></div>
   <div id="build" style="color:#5f7391;font-size:.8rem"></div>
@@ -40,7 +38,7 @@
 <script type="module">
 import * as THREE from 'three';
 
-const BUILD = 'pro-gap-fix-3';   // shown on the start screen and panel so you can tell which copy is loaded
+const BUILD = 'keepaway-1';   // shown on the start screen and panel so you can tell which copy is loaded
 document.getElementById('build').textContent = 'build ' + BUILD;
 
 /* ============================== CONFIG ============================== */
@@ -72,6 +70,28 @@ const CONFIG = {
   proMaxSafeHold: 1.2,         // seconds the open lane may stay put before it MUST move
   proStarve: 2.0,              // a lane empty longer than this can't become the open lane
   proMaxEmpty: 2.6,            // seconds: any lane empty this long gets the next object
+  keepAway: {
+    defenderScale: 1.0,        // 1.0 = roughly full-size defenceman (about 1.8 m tall)
+    orbitSpeedBase: 0.5,       // m/s skating around at level 0
+    orbitSpeedStep: 0.17,      // extra m/s per level
+    attackSpeedBase: 1.1,      // m/s lunging at your puck at level 0
+    attackSpeedStep: 0.26,
+    puckOffset: 0.55,          // metres in front of you where your real puck is assumed to be
+    reach: 0.7,                // attackers close to this distance from the puck, then poke
+    minBodyDistance: 0.75,     // defenders never come closer than this to your body
+    maxRadius: 3.2,            // edge of the keep-away zone (matches the treadmill's 4 m depth)
+    windup: 0.35, poke: 0.3, retreatMax: 1.6, attackTimeout: 1.8,
+    attackGap: 1.0,            // minimum seconds between the start of any two attacks
+    waitMin: 3.2, waitMax: 6.0,                  // seconds between one defender's attacks (level 0, 1 defender)
+    waitMinPerLevel: 0.18, waitMaxPerLevel: 0.35,// shortened per speed level
+    waitFloorMin: 1.2, waitFloorMax: 2.4,
+    perDifficulty: {           // defenders = difficulty
+      easy:   { count: 1, rMin: 1.9, rMax: 3.0, feint: 0,    simul: 1 },
+      medium: { count: 2, rMin: 1.8, rMax: 3.0, feint: 0,    simul: 1 },
+      hard:   { count: 3, rMin: 1.7, rMax: 2.9, feint: 0.15, simul: 2 },
+      pro:    { count: 4, rMin: 1.6, rMax: 2.8, feint: 0.3,  simul: 2 }
+    }
+  },
   panelWidth: 1.0,             // metres
   panelDistance: 1.0,          // metres in front of the player
   panelHeightOffset: -0.03     // relative to head height at (re)center (raise to move the panel up)
@@ -83,6 +103,9 @@ const state = {
   level: CONFIG.startLevel,
   lanes: CONFIG.startLanes,
   difficulty: CONFIG.startDifficulty,
+  game: 'treadmill',           // treadmill | keepaway
+  levelKA: 2,                  // Keep Away speed level
+  attacks: 0,
   elapsed: 0,
   passed: 0,
   spawnTimer: 0,
@@ -106,6 +129,12 @@ const intervalFor = lvl => Math.max(CONFIG.spawnIntervalMin,
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const randInt = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
 const laneX = i => (i - (state.lanes - 1) / 2) * CONFIG.laneSpacing;
+const KC = CONFIG.keepAway;
+const kaDiff = () => KC.perDifficulty[state.difficulty];
+const orbitSpeedFor = l => KC.orbitSpeedBase + l * KC.orbitSpeedStep;
+const attackSpeedFor = l => KC.attackSpeedBase + l * KC.attackSpeedStep;
+const curLevel = () => (state.game === 'keepaway' ? state.levelKA : state.level);
+const shownSpeed = () => (state.game === 'keepaway' ? attackSpeedFor(state.levelKA) : speedFor(state.level));
 
 /* ---------- remember settings between sessions ---------- */
 const SAVE_KEY = 'stickMR.v2';
@@ -115,12 +144,15 @@ const SAVE_KEY = 'stickMR.v2';
     if (CONFIG.laneOptions.includes(s.lanes)) state.lanes = s.lanes;
     if (CONFIG.difficulties.includes(s.difficulty)) state.difficulty = s.difficulty;
     if (Number.isInteger(s.level)) state.level = clamp(s.level, CONFIG.minLevel, CONFIG.maxLevel);
+    if (Number.isInteger(s.levelKA)) state.levelKA = clamp(s.levelKA, CONFIG.minLevel, CONFIG.maxLevel);
+    if (s.game === 'treadmill' || s.game === 'keepaway') state.game = s.game;
   } catch (e) {}
   resetPro();
 })();
 function saveSettings() {
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(
-    { lanes: state.lanes, difficulty: state.difficulty, level: state.level })); } catch (e) {}
+    { lanes: state.lanes, difficulty: state.difficulty, level: state.level,
+      levelKA: state.levelKA, game: state.game })); } catch (e) {}
 }
 
 /* ============================== THREE SETUP ============================== */
@@ -171,6 +203,17 @@ const ring = new THREE.Mesh(new THREE.RingGeometry(0.28, 0.32, 48),
   new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, side: THREE.DoubleSide }));
 ring.rotation.x = -Math.PI / 2; ring.position.y = 0.003;
 world.add(ring);
+
+// Keep Away: faint half-circle on the floor marking the zone in front of / beside you
+const kaRing = new THREE.Mesh(new THREE.RingGeometry(KC.maxRadius, KC.maxRadius + 0.04, 96, 1, 0, Math.PI),
+  new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.25, side: THREE.DoubleSide, depthWrite: false }));
+kaRing.rotation.x = -Math.PI / 2; kaRing.position.y = 0.003;
+world.add(kaRing);
+function applyGameVisuals() {
+  laneGroup.visible = state.game === 'treadmill';
+  kaRing.visible = state.game === 'keepaway';
+}
+applyGameVisuals();
 
 /* ============================== OBSTACLE MODELS ============================== */
 const std = (color, extra = {}) => new THREE.MeshStandardMaterial(Object.assign({ color, roughness: 0.55 }, extra));
@@ -452,8 +495,252 @@ function spawnRow() {
   state.nextInterval = intervalFor(state.level) * (hard ? a + Math.random() * (b - a) : 1);
 }
 
+/* ============================== KEEP AWAY ============================== */
+/* Opposing defencemen skate around you (front and sides only, never behind), always facing you,
+   and attack your puck at random times, then back off and reset. There is no virtual puck:
+   it is assumed to be about KC.puckOffset metres in front of you. */
+const dm = {
+  jersey: std(0xc1121f), jerseyDark: std(0x7a0c12), pants: std(0x14171c),
+  helmet: std(0x0f1115, { roughness: 0.25 }),
+  visor: std(0x9fd8ff, { transparent: true, opacity: 0.35, roughness: 0.1 }),
+  glove: std(0x1b1e25), stickM: std(0x20242b), tape: std(0xf1f5f9), skin: std(0xe0b090)
+};
+
+function makeDefenderModel() {            // model faces +Z, feet on Y = 0
+  const root = new THREE.Group();
+  const inner = new THREE.Group(); root.add(inner);   // leans while skating
+
+  const mkLeg = x => {
+    const leg = new THREE.Group(); leg.position.set(x, 0.9, 0);      // pivots at the hip
+    leg.add(cyl(0.09, 0.075, 0.5, dm.pants, 0, -0.25, 0, 16));
+    leg.add(cyl(0.058, 0.058, 0.3, dm.jersey, 0, -0.62, 0, 16));     // sock
+    leg.add(cyl(0.06, 0.06, 0.05, mat.white, 0, -0.55, 0, 16));      // sock stripe
+    const sk = buildSkate(); sk.rotation.y = Math.PI; sk.position.set(0, -0.9, 0); leg.add(sk);
+    inner.add(leg);
+    return leg;
+  };
+  const legL = mkLeg(-0.11), legR = mkLeg(0.11);
+
+  inner.add(box(0.38, 0.2, 0.24, dm.pants, 0, 0.95, 0));              // hips
+  inner.add(box(0.42, 0.52, 0.27, dm.jersey, 0, 1.26, 0));            // jersey
+  inner.add(box(0.425, 0.05, 0.275, mat.white, 0, 1.14, 0));
+  inner.add(box(0.425, 0.05, 0.275, mat.white, 0, 1.05, 0));
+  inner.add(box(0.58, 0.13, 0.31, dm.jerseyDark, 0, 1.55, 0));        // shoulder pads
+  inner.add(cyl(0.05, 0.05, 0.08, dm.skin, 0, 1.64, 0, 12));          // neck
+  const head = mesh(new THREE.SphereGeometry(0.125, 20, 16), dm.helmet, 0, 1.74, 0);
+  head.scale.set(1, 1.05, 1.1); inner.add(head);                       // helmet
+  inner.add(box(0.17, 0.07, 0.02, dm.visor, 0, 1.72, 0.14));          // visor
+
+  // arms holding the stick
+  inner.add(tube([-0.29, 1.53, 0], [-0.34, 1.3, 0.2], 0.05, dm.jerseyDark));
+  inner.add(tube([-0.34, 1.3, 0.2], [-0.1, 1.08, 0.5], 0.045, dm.jersey));
+  inner.add(tube([0.29, 1.53, 0], [0.31, 1.28, 0.2], 0.05, dm.jerseyDark));
+  inner.add(tube([0.31, 1.28, 0.2], [-0.02, 0.78, 0.67], 0.045, dm.jersey));
+  inner.add(box(0.1, 0.09, 0.13, dm.glove, -0.1, 1.08, 0.5));
+  inner.add(box(0.1, 0.09, 0.13, dm.glove, -0.02, 0.78, 0.67));
+
+  // stick: pivots at the top hand so it can swing at the puck
+  const stick = new THREE.Group(); stick.position.set(-0.1, 1.08, 0.5);
+  stick.add(tube([0, 0, 0], [0.28, -1.06, 0.62], 0.014, dm.stickM));
+  stick.add(box(0.03, 0.07, 0.3, dm.stickM, 0.28, -1.03, 0.75));
+  stick.add(box(0.032, 0.072, 0.12, dm.tape, 0.28, -1.03, 0.72));
+  inner.add(stick);
+
+  const sh = new THREE.Mesh(shadowGeo, mat.shadow);
+  sh.rotation.x = -Math.PI / 2; sh.position.y = 0.004; sh.scale.setScalar(0.45);
+  root.add(sh);
+  return { root, inner, legL, legR, stick };
+}
+
+const KA = { list: [], lastAttackStart: -99 };
+const _pl = { x: 0, z: 0 };
+const _cp = new THREE.Vector3();
+function playerLocal() {                   // your head position in play-area coordinates
+  if (renderer.xr.isPresenting) {
+    renderer.xr.getCamera().getWorldPosition(_cp);
+    world.worldToLocal(_cp);
+    _pl.x = _cp.x; _pl.z = _cp.z;
+  } else { _pl.x = 0; _pl.z = 0; }
+  return _pl;
+}
+
+function attackWait() {
+  const lvl = state.levelKA, cfg = kaDiff();
+  const lo = Math.max(KC.waitFloorMin, KC.waitMin - KC.waitMinPerLevel * lvl);
+  const hi = Math.max(KC.waitFloorMax, KC.waitMax - KC.waitMaxPerLevel * lvl);
+  return (lo + Math.random() * (hi - lo)) * (0.55 + 0.45 * cfg.count);   // more defenders => each attacks less often
+}
+
+/* a spot in the front half-plane (never behind you), spread away from the other defenders */
+function pickOrbitPoint(d, pl, rMin, rMax) {
+  let best = null, bestScore = -Infinity;
+  for (let k = 0; k < 10; k++) {
+    const ang = (Math.random() * 2 - 1) * Math.PI * 0.48;      // about -86 to +86 degrees from straight ahead
+    const r = rMin + Math.random() * (rMax - rMin);
+    const x = pl.x + Math.sin(ang) * r, z = pl.z - Math.cos(ang) * r;
+    let md = 9;
+    KA.list.forEach(o => {
+      if (o !== d) md = Math.min(md, Math.hypot(x - o.tx, z - o.tz), Math.hypot(x - o.x, z - o.z));
+    });
+    const score = Math.min(md, 3) + Math.random() * 0.4 - Math.hypot(x - d.x, z - d.z) * 0.05;
+    if (score > bestScore) { bestScore = score; best = { x, z }; }
+  }
+  return best;
+}
+
+function clearDefenders() {
+  KA.list.forEach(d => world.remove(d.root));
+  KA.list.length = 0;
+  KA.lastAttackStart = -99;
+}
+function spawnDefenders() {
+  clearDefenders();
+  const cfg = kaDiff(), pl = playerLocal(), n = cfg.count;
+  for (let i = 0; i < n; i++) {
+    const m = makeDefenderModel();
+    const ang = (-70 + 140 * (i + 0.5) / n) * Math.PI / 180;     // spread across the front
+    const r = cfg.rMax - Math.random() * 0.4;
+    const x = pl.x + Math.sin(ang) * r, z = pl.z - Math.cos(ang) * r;
+    m.root.position.set(x, 0, z);
+    m.root.scale.setScalar(0.01);
+    world.add(m.root);
+    const d = Object.assign(m, {
+      x, z, vx: 0, vz: 0, yaw: Math.atan2(pl.x - x, pl.z - z),
+      mode: 'skate', t: 0, tx: x, tz: z, retarget: 0,
+      nextAttack: state.elapsed + 1.5 + Math.random() * 2 + i * 0.7,
+      feint: false, phase: Math.random() * 6, swing: 0, swingTarget: 0, age: 0,
+      speedMul: 0.8 + Math.random() * 0.3
+    });
+    d.root.rotation.y = d.yaw;
+    KA.list.push(d);
+  }
+}
+
+function beginRetreat(d, pl, cfg, swing) {
+  const p = pickOrbitPoint(d, pl, cfg.rMin + 0.6, Math.min(KC.maxRadius - 0.1, cfg.rMax + 0.3));
+  d.tx = p.x; d.tz = p.z; d.mode = 'retreat'; d.t = 0; d.swingTarget = swing;
+}
+
+function updateKeepAway(dt) {
+  const cfg = kaDiff(), pl = playerLocal(), now = state.elapsed;
+  const lvl = state.levelKA, oSpd = orbitSpeedFor(lvl), aSpd = attackSpeedFor(lvl);
+  const puckX = pl.x, puckZ = pl.z - KC.puckOffset;
+  let attacking = KA.list.filter(d => d.mode === 'windup' || d.mode === 'attack' || d.mode === 'poke').length;
+
+  KA.list.forEach(d => {
+    d.age += dt; d.t += dt;
+    let tx = d.tx, tz = d.tz, speed = oSpd * d.speedMul, rate = 2.6, arrive = 2.2;
+
+    switch (d.mode) {
+      case 'skate': {                       // skate around: forwards, backwards, sideways
+        if (Math.hypot(d.tx - d.x, d.tz - d.z) < 0.25 || d.t > d.retarget) {
+          const p = pickOrbitPoint(d, pl, cfg.rMin, cfg.rMax);
+          d.tx = p.x; d.tz = p.z; d.t = 0; d.retarget = 1.2 + Math.random() * 1.8;
+        }
+        tx = d.tx; tz = d.tz; d.swingTarget = 0;
+        if (now >= d.nextAttack) {
+          if (attacking < cfg.simul && now - KA.lastAttackStart >= KC.attackGap) {
+            d.mode = 'windup'; d.t = 0; d.feint = Math.random() < cfg.feint;
+            KA.lastAttackStart = now; attacking++; state.attacks++;
+          } else d.nextAttack = now + 0.4;
+        }
+        break;
+      }
+      case 'windup':                        // brief set-up before the lunge
+        tx = d.x; tz = d.z; speed = 0.15; rate = 5; d.swingTarget = -0.7;
+        if (d.t >= KC.windup) { d.mode = 'attack'; d.t = 0; }
+        break;
+      case 'attack': {                      // lunge at the puck
+        const ox = d.x - puckX, oz = d.z - puckZ, dist = Math.hypot(ox, oz) || 1e-6;
+        tx = puckX + ox / dist * KC.reach; tz = puckZ + oz / dist * KC.reach;
+        speed = aSpd; rate = 6; arrive = 5; d.swingTarget = -0.2;
+        if (d.feint && dist <= KC.reach + 1.0) beginRetreat(d, pl, cfg, 0.5);       // fake: pull out early
+        else if (dist <= KC.reach + 0.25) { d.mode = 'poke'; d.t = 0; }
+        else if (d.t > KC.attackTimeout) beginRetreat(d, pl, cfg, 0);
+        break;
+      }
+      case 'poke':                          // stick sweep at the puck
+        tx = d.x; tz = d.z; speed = 0.2; rate = 5; d.swingTarget = 0.8;
+        if (d.t >= KC.poke) beginRetreat(d, pl, cfg, 0);
+        break;
+      case 'retreat':                       // back off and reset
+        tx = d.tx; tz = d.tz; speed = oSpd * 1.5 * d.speedMul; rate = 4; d.swingTarget = 0;
+        if (Math.hypot(tx - d.x, tz - d.z) < 0.35 || d.t > KC.retreatMax) {
+          d.mode = 'skate'; d.t = 0; d.retarget = 0.8 + Math.random();
+          d.nextAttack = now + attackWait();
+        }
+        break;
+    }
+
+    // steer with a little inertia, like skating
+    const dx = tx - d.x, dz = tz - d.z, dist = Math.hypot(dx, dz) || 1e-6;
+    const sp = Math.min(speed, dist * arrive), k = 1 - Math.exp(-rate * dt);
+    d.vx += (dx / dist * sp - d.vx) * k;
+    d.vz += (dz / dist * sp - d.vz) * k;
+    d.x += d.vx * dt; d.z += d.vz * dt;
+
+    // keep defenders from stacking on each other
+    KA.list.forEach(o => {
+      if (o === d) return;
+      const sx = d.x - o.x, sz = d.z - o.z, sd = Math.hypot(sx, sz);
+      if (sd < 1.0 && sd > 1e-4) { const push = (1.0 - sd) * Math.min(1, dt * 6); d.x += sx / sd * push; d.z += sz / sd * push; }
+    });
+
+    // never behind you, never inside you, never beyond the zone
+    let rx = d.x - pl.x, rz = d.z - pl.z;
+    if (rz > -0.05) { rz = -0.05; if (d.vz > 0) d.vz = 0; }
+    let len = Math.hypot(rx, rz);
+    if (len < KC.minBodyDistance) { const f = KC.minBodyDistance / len; rx *= f; rz *= f; len = KC.minBodyDistance; }
+    if (len > KC.maxRadius) { const f = KC.maxRadius / len; rx *= f; rz *= f; }
+    d.x = pl.x + rx; d.z = pl.z + rz;
+
+    // always face the player
+    const want = Math.atan2(pl.x - d.x, pl.z - d.z);
+    let diff = want - d.yaw; diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+    d.yaw += clamp(diff, -9 * dt, 9 * dt);
+    d.root.rotation.y = d.yaw;
+    d.root.position.set(d.x, 0, d.z);
+    d.root.scale.setScalar(KC.defenderScale * Math.min(1, 0.01 + d.age / 0.4));
+
+    // skating animation: leg swing, lean into the direction of travel, stick swing
+    const spd = Math.hypot(d.vx, d.vz);
+    d.phase += dt * (2 + spd * 3);
+    const amp = 0.45 * Math.min(spd / 1.6, 1);
+    d.legL.rotation.x = Math.sin(d.phase) * amp; d.legR.rotation.x = -Math.sin(d.phase) * amp;
+    const fwd = d.vx * Math.sin(d.yaw) + d.vz * Math.cos(d.yaw);
+    const lat = d.vx * Math.cos(d.yaw) - d.vz * Math.sin(d.yaw);
+    const bias = (d.mode === 'windup' || d.mode === 'attack') ? 0.12 : 0;
+    const lx = clamp(fwd * 0.06, -0.14, 0.14) + bias, lz = clamp(-lat * 0.06, -0.14, 0.14);
+    const kk = 1 - Math.exp(-8 * dt);
+    d.inner.rotation.x += (lx - d.inner.rotation.x) * kk;
+    d.inner.rotation.z += (lz - d.inner.rotation.z) * kk;
+    d.swing += (d.swingTarget - d.swing) * (1 - Math.exp(-12 * dt));
+    d.stick.rotation.y = d.swing;
+  });
+}
+
+function updateTreadmill(dt) {
+  const speed = speedFor(state.level);
+
+  state.spawnTimer += dt;
+  if (state.spawnTimer >= state.nextInterval) {
+    state.spawnTimer = 0;
+    spawnRow();
+  }
+
+  for (let i = obstacles.length - 1; i >= 0; i--) {
+    const o = obstacles[i];
+    o.position.z += speed * dt;                 // slide along the floor toward the player's feet
+    o.userData.age += dt;
+    o.scale.setScalar(Math.min(1, 0.01 + o.userData.age / 0.35));
+    if (o.position.z > CONFIG.despawnZ) {
+      world.remove(o); obstacles.splice(i, 1); state.passed++;
+    }
+  }
+}
+
 /* ============================== UI PANEL ============================== */
-const CW = 1024, CH = 640;
+const CW = 1024, CH = 704;
 const canvas = document.createElement('canvas'); canvas.width = CW; canvas.height = CH;
 const ctx = canvas.getContext('2d');
 const panelTex = new THREE.CanvasTexture(canvas);
@@ -466,17 +753,20 @@ const panel = new THREE.Mesh(
 );
 world.add(panel);
 
-const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+const treadmillOnly = () => state.game === 'treadmill';
 const buttons = [
-  { id: 'slower',   x: 40,  y: 215, w: 200, h: 100, label: '−  SPEED' },
-  { id: 'toggle',   x: 262, y: 215, w: 500, h: 100, label: '' },
-  { id: 'faster',   x: 784, y: 215, w: 200, h: 100, label: 'SPEED  +' },
-  ...CONFIG.laneOptions.map((n, i) => ({ id: 'lanes' + n, x: 215 + i * 194, y: 332, w: 184, h: 70,
-      label: n + ' LANES', sel: () => state.lanes === n })),
-  ...CONFIG.difficulties.map((d, i) => ({ id: 'diff' + d, x: 215 + i * 194, y: 418, w: 184, h: 70,
-      label: d.toUpperCase(), sel: () => state.difficulty === d })),
-  { id: 'reset',    x: 40,  y: 508, w: 300, h: 80,  label: 'RESET' },
-  { id: 'recenter', x: 684, y: 508, w: 300, h: 80,  label: 'RECENTER' }
+  { id: 'game:treadmill', x: 40,  y: 62,  w: 470, h: 62, label: 'ENDLESS OBJECT TREADMILL', sel: () => state.game === 'treadmill' },
+  { id: 'game:keepaway',  x: 514, y: 62,  w: 470, h: 62, label: 'KEEP AWAY',               sel: () => state.game === 'keepaway' },
+  { id: 'slower',   x: 40,  y: 262, w: 200, h: 96, label: '−  SPEED' },
+  { id: 'toggle',   x: 262, y: 262, w: 500, h: 96, label: '' },
+  { id: 'faster',   x: 784, y: 262, w: 200, h: 96, label: 'SPEED  +' },
+  ...CONFIG.laneOptions.map((n, i) => ({ id: 'lanes' + n, x: 215 + i * 194, y: 372, w: 184, h: 66,
+      label: n + ' LANES', sel: () => state.lanes === n, show: treadmillOnly })),
+  ...CONFIG.difficulties.map((d, i) => ({ id: 'diff' + d, x: 215 + i * 194, y: 454, w: 184, h: 66,
+      label: () => state.game === 'keepaway' ? d.toUpperCase() + ' (' + KC.perDifficulty[d].count + ')' : d.toUpperCase(),
+      sel: () => state.difficulty === d })),
+  { id: 'reset',    x: 40,  y: 540, w: 300, h: 80,  label: 'RESET' },
+  { id: 'recenter', x: 684, y: 540, w: 300, h: 80,  label: 'RECENTER' }
 ];
 
 function rr(x, y, w, h, r) {
@@ -495,6 +785,7 @@ const fmtTime = t => {
 
 let lastTimerText = '';
 function drawPanel() {
+  const ka = state.game === 'keepaway';
   ctx.clearRect(0, 0, CW, CH);
   ctx.fillStyle = 'rgba(10,18,34,0.9)';
   rr(0, 0, CW, CH, 36); ctx.fill();
@@ -502,43 +793,55 @@ function drawPanel() {
   rr(3, 3, CW - 6, CH - 6, 34); ctx.stroke();
 
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#9fb3d1'; ctx.font = '600 32px system-ui, sans-serif';
-  ctx.fillText('STICKHANDLING TRAINER', CW / 2, 38);
+  ctx.fillStyle = '#9fb3d1'; ctx.font = '600 28px system-ui, sans-serif';
+  ctx.fillText('SICKMITTS VR', CW / 2, 32);
 
-  ctx.fillStyle = '#ffffff'; ctx.font = '700 104px ui-monospace, Menlo, Consolas, monospace';
-  ctx.fillText(fmtTime(state.elapsed), CW / 2, 112);
+  ctx.fillStyle = '#ffffff'; ctx.font = '700 98px ui-monospace, Menlo, Consolas, monospace';
+  ctx.fillText(fmtTime(state.elapsed), CW / 2, 175);
 
   ctx.fillStyle = '#ffd166'; ctx.font = '600 34px system-ui, sans-serif';
-  ctx.fillText('Level ' + state.level + '  ·  ' + speedFor(state.level).toFixed(1) + ' m/s  ·  Passed ' + state.passed,
-    CW / 2, 178);
+  ctx.fillText('Level ' + curLevel() + '  ·  ' + shownSpeed().toFixed(1) + ' m/s  ·  ' +
+    (ka ? 'Attacks ' + state.attacks : 'Passed ' + state.passed), CW / 2, 236);
 
   ctx.fillStyle = '#5f7391'; ctx.font = '500 20px system-ui, sans-serif';
-  ctx.fillText('build ' + BUILD, CW / 2, 616);
+  ctx.fillText('build ' + BUILD, CW / 2, 676);
 
-  ctx.textAlign = 'left'; ctx.fillStyle = '#9fb3d1'; ctx.font = '700 28px system-ui, sans-serif';
-  ctx.fillText('LANES', 40, 368);
+  ctx.textAlign = 'left'; ctx.fillStyle = '#9fb3d1';
+  if (ka) {
+    ctx.font = '700 23px system-ui, sans-serif';
+    ctx.fillText('DEFENDERS', 40, 405);
+    ctx.fillStyle = '#1a2740'; rr(215, 372, 769, 66, 20); ctx.fill();
+    const n = kaDiff().count;
+    ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.font = '700 30px system-ui, sans-serif';
+    ctx.fillText(n + (n === 1 ? ' DEFENDER' : ' DEFENDERS') + '  ·  set by difficulty', 215 + 769 / 2, 407);
+    ctx.textAlign = 'left'; ctx.fillStyle = '#9fb3d1';
+  } else {
+    ctx.font = '700 28px system-ui, sans-serif';
+    ctx.fillText('LANES', 40, 405);
+  }
   ctx.font = '700 25px system-ui, sans-serif';
-  ctx.fillText('DIFFICULTY', 40, 454);
+  ctx.fillText('DIFFICULTY', 40, 487);
   ctx.textAlign = 'center';
 
   buttons.forEach(b => {
+    if (b.show && !b.show()) return;
     const hov = state.hovered === b.id;
     const sel = b.sel && b.sel();
     let base = '#24324d';
-    let label = b.label;
+    let label = typeof b.label === 'function' ? b.label() : b.label;
     if (b.id === 'toggle') {
       label = state.mode === 'running' ? 'PAUSE' : state.mode === 'paused' ? 'RESUME' : 'START';
       base = state.mode === 'running' ? '#f4a261' : '#2a9d58';
     }
     if (sel) base = '#1d6fa5';
-    if (b.id === 'slower' && state.level <= CONFIG.minLevel) base = '#1a2236';
-    if (b.id === 'faster' && state.level >= CONFIG.maxLevel) base = '#1a2236';
+    if (b.id === 'slower' && curLevel() <= CONFIG.minLevel) base = '#1a2236';
+    if (b.id === 'faster' && curLevel() >= CONFIG.maxLevel) base = '#1a2236';
     ctx.fillStyle = hov ? '#4cc9f0' : base;
     rr(b.x, b.y, b.w, b.h, 20); ctx.fill();
     if (sel && !hov) { ctx.strokeStyle = '#4cc9f0'; ctx.lineWidth = 4; rr(b.x, b.y, b.w, b.h, 20); ctx.stroke(); }
     ctx.fillStyle = hov ? '#0b1220' : '#ffffff';
-    const big = b.id === 'toggle';
-    ctx.font = (big ? '800 62px' : b.h <= 70 ? '700 30px' : '700 32px') + ' system-ui, sans-serif';
+    const fs = b.id === 'toggle' ? 62 : b.id.startsWith('game:') ? 28 : label.length > 9 ? 26 : b.h <= 70 ? 30 : 32;
+    ctx.font = (b.id === 'toggle' ? '800 ' : '700 ') + fs + 'px system-ui, sans-serif';
     ctx.fillText(label, b.x + b.w / 2, b.y + b.h / 2 + 2);
   });
   panelTex.needsUpdate = true;
@@ -546,15 +849,26 @@ function drawPanel() {
 drawPanel();
 
 function resetRun() {
-  state.mode = 'idle'; state.elapsed = 0; state.passed = 0;
+  state.mode = 'idle'; state.elapsed = 0; state.passed = 0; state.attacks = 0;
   state.spawnTimer = 0; state.nextInterval = 0.5;
   resetPro();
   clearObstacles();
+  clearDefenders();
   lastTimerText = '';
 }
 
+function setGame(g) {
+  if (g === state.game) return;
+  state.game = g;
+  resetRun();
+  applyGameVisuals();
+  saveSettings();
+}
+
 function pressButton(id) {
-  if (id.startsWith('lanes')) {
+  if (id.startsWith('game:')) {
+    setGame(id.slice(5));
+  } else if (id.startsWith('lanes')) {
     const n = parseInt(id.slice(5), 10);
     if (n !== state.lanes) {
       state.lanes = n; rebuildLanes();
@@ -566,13 +880,23 @@ function pressButton(id) {
     const d = id.slice(4);
     if (d !== state.difficulty) {
       state.difficulty = d; resetPro();
+      if (state.game === 'keepaway' && state.mode !== 'idle') spawnDefenders();   // new defender count
       saveSettings();
     }
   } else {
     switch (id) {
-      case 'toggle': state.mode = state.mode === 'running' ? 'paused' : 'running'; break;
-      case 'slower': state.level = Math.max(CONFIG.minLevel, state.level - 1); saveSettings(); break;
-      case 'faster': state.level = Math.min(CONFIG.maxLevel, state.level + 1); saveSettings(); break;
+      case 'toggle':
+        if (state.mode === 'idle' && state.game === 'keepaway') spawnDefenders();
+        state.mode = state.mode === 'running' ? 'paused' : 'running';
+        break;
+      case 'slower':
+      case 'faster': {
+        const delta = id === 'faster' ? 1 : -1;
+        if (state.game === 'keepaway') state.levelKA = clamp(state.levelKA + delta, CONFIG.minLevel, CONFIG.maxLevel);
+        else state.level = clamp(state.level + delta, CONFIG.minLevel, CONFIG.maxLevel);
+        saveSettings();
+        break;
+      }
       case 'reset': resetRun(); break;
       case 'recenter': state.needsPlace = true; break;
     }
@@ -592,7 +916,7 @@ function pickButton(ctrl) {
   const hit = raycaster.intersectObject(panel, false)[0];
   if (!hit || !hit.uv) return { id: null, dist: null };
   const cx = hit.uv.x * CW, cy = (1 - hit.uv.y) * CH;
-  const b = buttons.find(b => cx >= b.x && cx <= b.x + b.w && cy >= b.y && cy <= b.y + b.h);
+  const b = buttons.find(b => (!b.show || b.show()) && cx >= b.x && cx <= b.x + b.w && cy >= b.y && cy <= b.y + b.h);
   return { id: b ? b.id : null, dist: hit.distance };
 }
 
@@ -649,26 +973,9 @@ renderer.setAnimationLoop(() => {
 
   if (state.mode === 'running') {
     state.elapsed += dt;
-    const speed = speedFor(state.level);
+    if (state.game === 'treadmill') updateTreadmill(dt); else updateKeepAway(dt);
 
-    state.spawnTimer += dt;
-    if (state.spawnTimer >= state.nextInterval) {
-      state.spawnTimer = 0;
-      spawnRow();
-    }
-
-    for (let i = obstacles.length - 1; i >= 0; i--) {
-      const o = obstacles[i];
-      o.position.z += speed * dt;                 // slide along the floor toward the player's feet
-      o.userData.age += dt;
-      o.scale.setScalar(Math.min(1, 0.01 + o.userData.age / 0.35));
-      if (o.position.z > CONFIG.despawnZ) {
-        world.remove(o); obstacles.splice(i, 1); state.passed++;
-        lastTimerText = '';
-      }
-    }
-
-    const t = fmtTime(state.elapsed) + '|' + state.passed;
+    const t = fmtTime(state.elapsed) + '|' + state.passed + '|' + state.attacks;
     if (t !== lastTimerText) { lastTimerText = t; drawPanel(); }
   }
 
