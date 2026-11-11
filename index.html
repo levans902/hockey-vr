@@ -23,9 +23,9 @@
 <body>
 <div id="ui">
   <h1>🏒 Stickhandling MR</h1>
-  <p>Clear your floor, put on your Quest 3, and tap below. Defenders and pylons will slide toward your feet in the
-     left, middle and right lanes &mdash; read them early and stickhandle around them. Point a controller (or pinch with
-     your hand) at the floating panel to start.</p>
+  <p>Clear your floor, put on your Quest 3, and tap below. Water bottles, pylons, dynamite, skates, gloves and mini nets
+     will slide toward your feet. Read them early and stickhandle through the gaps. Point a controller (or pinch with
+     your hand) at the floating panel to pick lanes, difficulty and speed, then start.</p>
   <button id="enter" disabled>Checking MR support…</button>
   <div id="msg"></div>
 </div>
@@ -37,33 +37,63 @@ import * as THREE from 'three';
 const CONFIG = {
   spawnDistance: 4.0,          // metres in front of the player
   despawnZ: 0.9,               // metres past the player's feet (behind) before removal
-  lanes: [-0.6, 0, 0.6],       // Left, Middle, Right (metres)
+  laneSpacing: 0.55,           // metres between lane centres
+  laneGuideWidth: 0.5,         // width of the floor guide strips
+  laneOptions: [3, 4, 5],
+  startLanes: 3,
+  difficulties: ['easy', 'medium', 'hard'],
+  startDifficulty: 'easy',
   baseSpeed: 0.7,              // m/s at level 0
   speedStep: 0.3,              // extra m/s per level
   minLevel: 1,
   maxLevel: 10,
   startLevel: 2,
-  spawnIntervalBase: 2.6,      // seconds between spawns at level 0
+  spawnIntervalBase: 2.6,      // seconds between rows at level 0
   spawnIntervalPerLevel: 0.2,  // seconds shaved off per level
-  spawnIntervalMin: 0.7,
+  spawnIntervalMin: 0.8,
+  hardIntervalJitter: [0.85, 1.3], // random multiplier on the row interval in HARD
+  hardDepthJitter: 0.2,        // metres of random front/back offset per object in HARD
   panelWidth: 1.0,             // metres
   panelDistance: 1.0,          // metres in front of the player
-  panelHeightOffset: -0.12     // relative to head height at (re)center
+  panelHeightOffset: -0.18     // relative to head height at (re)center
 };
 
 /* ============================== STATE ============================== */
 const state = {
   mode: 'idle',                // idle | running | paused
   level: CONFIG.startLevel,
+  lanes: CONFIG.startLanes,
+  difficulty: CONFIG.startDifficulty,
   elapsed: 0,
   passed: 0,
   spawnTimer: 0,
+  nextInterval: 0.5,
+  safeLane: 1,                 // guaranteed-open lane path (medium / hard)
   needsPlace: true,
   hovered: null
 };
 const speedFor = lvl => CONFIG.baseSpeed + lvl * CONFIG.speedStep;
 const intervalFor = lvl => Math.max(CONFIG.spawnIntervalMin,
   CONFIG.spawnIntervalBase - lvl * CONFIG.spawnIntervalPerLevel);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const randInt = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+const laneX = i => (i - (state.lanes - 1) / 2) * CONFIG.laneSpacing;
+
+/* ---------- remember settings between sessions ---------- */
+const SAVE_KEY = 'stickMR.v2';
+(function loadSettings() {
+  try {
+    const s = JSON.parse(localStorage.getItem(SAVE_KEY) || '{}');
+    if (CONFIG.laneOptions.includes(s.lanes)) state.lanes = s.lanes;
+    if (CONFIG.difficulties.includes(s.difficulty)) state.difficulty = s.difficulty;
+    if (Number.isInteger(s.level)) state.level = clamp(s.level, CONFIG.minLevel, CONFIG.maxLevel);
+  } catch (e) {}
+  state.safeLane = Math.floor(state.lanes / 2);
+})();
+function saveSettings() {
+  try { localStorage.setItem(SAVE_KEY, JSON.stringify(
+    { lanes: state.lanes, difficulty: state.difficulty, level: state.level })); } catch (e) {}
+}
 
 /* ============================== THREE SETUP ============================== */
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -92,75 +122,198 @@ scene.add(world);
 /* ---------- floor lane guides (semi-transparent so real tiles stay visible) ---------- */
 const guideMat = new THREE.MeshBasicMaterial({ color: 0x4cc9f0, transparent: true, opacity: 0.18,
   depthWrite: false, side: THREE.DoubleSide });
-const laneW = 0.5;
-CONFIG.lanes.forEach(x => {
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(laneW, CONFIG.spawnDistance + CONFIG.despawnZ), guideMat);
-  m.rotation.x = -Math.PI / 2;
-  m.position.set(x, 0.002, -(CONFIG.spawnDistance - CONFIG.despawnZ) / 2);
-  world.add(m);
-});
+const laneGroup = new THREE.Group();
+world.add(laneGroup);
+function rebuildLanes() {
+  while (laneGroup.children.length) {
+    const c = laneGroup.children.pop();
+    c.geometry.dispose();
+  }
+  const len = CONFIG.spawnDistance + CONFIG.despawnZ;
+  for (let i = 0; i < state.lanes; i++) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(CONFIG.laneGuideWidth, len), guideMat);
+    m.rotation.x = -Math.PI / 2;
+    m.position.set(laneX(i), 0.002, -(CONFIG.spawnDistance - CONFIG.despawnZ) / 2);
+    laneGroup.add(m);
+  }
+}
+rebuildLanes();
+
 const ring = new THREE.Mesh(new THREE.RingGeometry(0.28, 0.32, 48),
   new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, side: THREE.DoubleSide }));
 ring.rotation.x = -Math.PI / 2; ring.position.y = 0.003;
 world.add(ring);
 
-/* ---------- obstacle prefabs (shared geometry/material) ---------- */
-const matRed    = new THREE.MeshStandardMaterial({ color: 0xd62828, roughness: 0.55 });
-const matDark   = new THREE.MeshStandardMaterial({ color: 0x7a1010, roughness: 0.6 });
-const matOrange = new THREE.MeshStandardMaterial({ color: 0xff6d00, roughness: 0.5 });
-const matWhite  = new THREE.MeshStandardMaterial({ color: 0xf5f5f5, roughness: 0.5 });
-const matShadow = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.3, depthWrite: false });
-
-const geo = {
-  defBody: new THREE.CylinderGeometry(0.17, 0.2, 0.85, 28),
-  defTop:  new THREE.CylinderGeometry(0.17, 0.17, 0.06, 28),
-  defHead: new THREE.SphereGeometry(0.13, 20, 16),
-  cone:    new THREE.ConeGeometry(0.16, 0.5, 28),
-  coneBase:new THREE.BoxGeometry(0.34, 0.03, 0.34),
-  coneBand:new THREE.CylinderGeometry(0.085, 0.115, 0.1, 28),
-  block:   new THREE.BoxGeometry(0.5, 0.36, 0.2),
-  stripe:  new THREE.BoxGeometry(0.1, 0.362, 0.202),
-  shadow:  new THREE.CircleGeometry(0.28, 24)
+/* ============================== OBSTACLE MODELS ============================== */
+const std = (color, extra = {}) => new THREE.MeshStandardMaterial(Object.assign({ color, roughness: 0.55 }, extra));
+const mat = {
+  orange: std(0xff6d00), white: std(0xf5f5f5), black: std(0x15171c, { roughness: 0.4 }),
+  darkGray: std(0x3a3f49), steel: std(0xcfd8dc, { metalness: 0.8, roughness: 0.3 }),
+  red: std(0xd62828), redGloss: std(0xe63946, { roughness: 0.3 }),
+  navy: std(0x14213d), grayPad: std(0x6c7a89),
+  water: std(0x7fd1ff, { roughness: 0.2 }),
+  bottle: std(0x4aa8ff, { transparent: true, opacity: 0.45, roughness: 0.1 }),
+  tnt: std(0xc1121f, { roughness: 0.6 }), tan: std(0xe9c46a), fuse: std(0xd4a373),
+  spark: new THREE.MeshStandardMaterial({ color: 0xffb703, emissive: 0xff6d00, emissiveIntensity: 1.5 }),
+  net: new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.28,
+    depthWrite: false, side: THREE.DoubleSide }),
+  shadow: new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.3, depthWrite: false })
 };
 
-function makeDefender() {
-  const g = new THREE.Group();
-  const body = new THREE.Mesh(geo.defBody, matRed); body.position.y = 0.425; g.add(body);
-  const top = new THREE.Mesh(geo.defTop, matDark); top.position.y = 0.85; g.add(top);
-  const head = new THREE.Mesh(geo.defHead, matDark); head.position.y = 0.98; g.add(head);
-  return g;
+function mesh(g, m, x = 0, y = 0, z = 0) { const o = new THREE.Mesh(g, m); o.position.set(x, y, z); return o; }
+function box(w, h, d, m, x, y, z) { return mesh(new THREE.BoxGeometry(w, h, d), m, x, y, z); }
+function cyl(rt, rb, h, m, x, y, z, seg = 24) { return mesh(new THREE.CylinderGeometry(rt, rb, h, seg), m, x, y, z); }
+const UP = new THREE.Vector3(0, 1, 0);
+function tube(a, b, r, m) {
+  const va = new THREE.Vector3(...a), vb = new THREE.Vector3(...b);
+  const o = mesh(new THREE.CylinderGeometry(r, r, va.distanceTo(vb), 10), m);
+  o.position.copy(va).add(vb).multiplyScalar(0.5);
+  o.quaternion.setFromUnitVectors(UP, vb.clone().sub(va).normalize());
+  return o;
 }
+function quad(p0, p1, p2, p3, m) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute([...p0, ...p1, ...p2, ...p3], 3));
+  g.setIndex([0, 1, 2, 0, 2, 3]);
+  g.computeVertexNormals();
+  return new THREE.Mesh(g, m);
+}
+
+/* ----- 1. Water bottle ----- */
+function makeWaterBottle() {
+  const g = new THREE.Group();
+  g.add(cyl(0.07, 0.07, 0.26, mat.bottle, 0, 0.14, 0));            // clear body
+  g.add(cyl(0.062, 0.062, 0.2, mat.water, 0, 0.12, 0));            // water inside
+  g.add(cyl(0.0705, 0.0705, 0.09, mat.white, 0, 0.15, 0));         // label band
+  g.add(cyl(0.035, 0.07, 0.06, mat.bottle, 0, 0.30, 0));           // shoulder
+  g.add(cyl(0.03, 0.03, 0.03, mat.white, 0, 0.345, 0));            // neck
+  g.add(cyl(0.018, 0.03, 0.055, mat.orange, 0, 0.39, 0));          // squirt nozzle
+  g.scale.setScalar(1.5);
+  return { obj: g, shadow: 0.2 };
+}
+
+/* ----- 2. Pylon ----- */
 function makePylon() {
   const g = new THREE.Group();
-  const base = new THREE.Mesh(geo.coneBase, matOrange); base.position.y = 0.015; g.add(base);
-  const cone = new THREE.Mesh(geo.cone, matOrange); cone.position.y = 0.28; g.add(cone);
-  const band = new THREE.Mesh(geo.coneBand, matWhite); band.position.y = 0.26; g.add(band);
-  return g;
+  g.add(box(0.34, 0.03, 0.34, mat.orange, 0, 0.015, 0));
+  g.add(mesh(new THREE.ConeGeometry(0.16, 0.5, 28), mat.orange, 0, 0.28, 0));
+  g.add(cyl(0.085, 0.115, 0.1, mat.white, 0, 0.26, 0, 28));
+  return { obj: g, shadow: 0.26 };
 }
-function makeBlock() {
+
+/* ----- 3. Stick of dynamite ----- */
+function makeDynamite() {
   const g = new THREE.Group();
-  const b = new THREE.Mesh(geo.block, matRed); b.position.y = 0.18; g.add(b);
-  [-0.15, 0.15].forEach(x => {
-    const s = new THREE.Mesh(geo.stripe, matWhite); s.position.set(x, 0.18, 0); g.add(s);
-  });
-  return g;
+  g.add(cyl(0.06, 0.06, 0.5, mat.tnt, 0, 0.25, 0, 24));
+  g.add(cyl(0.062, 0.062, 0.04, mat.tan, 0, 0.09, 0, 24));
+  g.add(cyl(0.062, 0.062, 0.04, mat.tan, 0, 0.41, 0, 24));
+  g.add(cyl(0.05, 0.05, 0.012, mat.black, 0, 0.506, 0, 24));
+  g.add(tube([0, 0.5, 0], [0.035, 0.58, 0.0], 0.007, mat.fuse));
+  g.add(tube([0.035, 0.58, 0], [0.075, 0.64, 0.0], 0.007, mat.fuse));
+  g.add(mesh(new THREE.SphereGeometry(0.022, 12, 10), mat.spark, 0.078, 0.655, 0));
+  // "TNT" sticker facing the player (+Z)
+  const c = document.createElement('canvas'); c.width = 128; c.height = 160;
+  const x = c.getContext('2d');
+  x.fillStyle = '#f1e3b8'; x.fillRect(0, 0, 128, 160);
+  x.fillStyle = '#111'; x.font = '900 62px Impact, Arial Black, sans-serif';
+  x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('TNT', 64, 82);
+  x.strokeStyle = '#111'; x.lineWidth = 6; x.strokeRect(3, 3, 122, 154);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  const label = mesh(new THREE.PlaneGeometry(0.09, 0.112), new THREE.MeshBasicMaterial({ map: tex }), 0, 0.25, 0.064);
+  g.add(label);
+  g.scale.setScalar(1.15);
+  return { obj: g, shadow: 0.18 };
 }
-const prefabs = [makeDefender, makePylon, makeBlock];
 
-/* ---------- obstacle management ---------- */
+/* ----- 4. Hockey skates (pair) ----- */
+function buildSkate() {
+  const s = new THREE.Group();            // toe points to -Z
+  s.add(box(0.012, 0.025, 0.34, mat.steel, 0, 0.0125, 0));          // blade
+  s.add(box(0.03, 0.045, 0.26, mat.darkGray, 0, 0.0475, 0.0));      // holder
+  s.add(box(0.1, 0.03, 0.28, mat.black, 0, 0.085, 0));              // sole
+  s.add(box(0.095, 0.09, 0.24, mat.black, 0, 0.145, -0.02));        // boot
+  s.add(box(0.098, 0.025, 0.22, mat.redGloss, 0, 0.105, -0.02));    // red stripe
+  const toe = mesh(new THREE.SphereGeometry(0.05, 16, 12), mat.darkGray, 0, 0.135, -0.15);
+  toe.scale.set(1, 0.9, 1.3); s.add(toe);                           // toe cap
+  s.add(box(0.09, 0.17, 0.1, mat.black, 0, 0.26, 0.07));            // ankle cuff
+  s.add(box(0.092, 0.03, 0.102, mat.white, 0, 0.35, 0.07));         // cuff trim
+  return s;
+}
+function makeSkates() {
+  const g = new THREE.Group();
+  const a = buildSkate(); a.position.set(-0.085, 0, 0.02); a.rotation.y = 0.15;
+  const b = buildSkate(); b.position.set(0.085, 0, -0.02); b.rotation.y = -0.2;
+  g.add(a, b);
+  g.scale.setScalar(1.25);
+  return { obj: g, shadow: 0.3 };
+}
+
+/* ----- 5. Hockey gloves (pair, lying on the floor) ----- */
+function buildGlove(side) {            // side: +1 thumb on right, -1 thumb on left; fingers point to -Z
+  const gl = new THREE.Group();
+  gl.add(box(0.15, 0.05, 0.18, mat.navy, 0, 0.025, 0));                       // palm / back
+  gl.add(box(0.12, 0.012, 0.15, mat.grayPad, 0, 0.056, 0));                   // backhand pad
+  [-0.054, -0.018, 0.018, 0.054].forEach((fx, i) => {
+    const f = box(0.032, 0.045, 0.13, mat.navy, fx, 0.0225, -0.15);
+    f.rotation.y = (i - 1.5) * 0.06; gl.add(f);                               // fingers (slight fan)
+  });
+  const th = box(0.04, 0.045, 0.1, mat.navy, side * 0.105, 0.0225, -0.06);
+  th.rotation.y = side * -0.6; gl.add(th);                                    // thumb
+  gl.add(box(0.17, 0.075, 0.12, mat.red, 0, 0.0375, 0.13));                   // cuff
+  gl.add(box(0.172, 0.077, 0.02, mat.white, 0, 0.0385, 0.16));                // cuff stripe
+  return gl;
+}
+function makeGloves() {
+  const g = new THREE.Group();
+  const l = buildGlove(-1); l.position.set(-0.115, 0, 0.0); l.rotation.y = 0.25;
+  const r = buildGlove(1);  r.position.set(0.115, 0, -0.03); r.rotation.y = -0.2;
+  g.add(l, r);
+  g.scale.setScalar(0.95);
+  return { obj: g, shadow: 0.3 };
+}
+
+/* ----- 6. Mini net (opening faces the player) ----- */
+function makeMiniNet() {
+  const g = new THREE.Group();
+  const w = 0.23, H = 0.3, bh = 0.17, D = 0.2, r = 0.016;
+  const P = (x, y, z) => [x, y, z];
+  // frame
+  [-w, w].forEach(x => {
+    g.add(tube(P(x, 0, 0), P(x, H, 0), r, mat.redGloss));            // front posts
+    g.add(tube(P(x, H, 0), P(x, bh, -D), r, mat.redGloss));          // top side bars
+    g.add(tube(P(x, 0, 0), P(x, 0, -D), r, mat.redGloss));           // base side bars
+    g.add(tube(P(x, 0, -D), P(x, bh, -D), r, mat.redGloss));         // back posts
+  });
+  g.add(tube(P(-w, H, 0), P(w, H, 0), r, mat.redGloss));             // crossbar
+  g.add(tube(P(-w, bh, -D), P(w, bh, -D), r, mat.redGloss));         // back top bar
+  g.add(tube(P(-w, 0, -D), P(w, 0, -D), r, mat.redGloss));           // back base bar
+  // netting
+  g.add(quad(P(-w, 0, -D), P(w, 0, -D), P(w, bh, -D), P(-w, bh, -D), mat.net)); // back
+  g.add(quad(P(-w, H, 0), P(w, H, 0), P(w, bh, -D), P(-w, bh, -D), mat.net));   // top
+  g.add(quad(P(-w, 0, 0), P(-w, H, 0), P(-w, bh, -D), P(-w, 0, -D), mat.net));  // left
+  g.add(quad(P(w, 0, 0), P(w, H, 0), P(w, bh, -D), P(w, 0, -D), mat.net));      // right
+  g.position.z = 0.1;
+  const wrap = new THREE.Group(); wrap.add(g);
+  wrap.scale.setScalar(1.05);
+  return { obj: wrap, shadow: 0.3 };
+}
+
+/* ---------- build templates once, clone per spawn (clones share geometry/materials) ---------- */
+const shadowGeo = new THREE.CircleGeometry(1, 28);
+const templates = [makeWaterBottle, makePylon, makeDynamite, makeSkates, makeGloves, makeMiniNet].map(fn => {
+  const { obj, shadow } = fn();
+  const s = new THREE.Mesh(shadowGeo, mat.shadow);
+  s.rotation.x = -Math.PI / 2; s.position.y = 0.004; s.scale.setScalar(shadow);
+  const root = new THREE.Group(); root.add(obj, s);
+  return root;
+});
+
+/* ============================== OBSTACLE MANAGEMENT ============================== */
 const obstacles = [];
-let lastLane = -1;
 
-function spawnObstacle() {
-  let lane = Math.floor(Math.random() * CONFIG.lanes.length);
-  if (lane === lastLane && Math.random() < 0.4) lane = (lane + 1 + Math.floor(Math.random() * 2)) % CONFIG.lanes.length;
-  lastLane = lane;
-
-  const obj = prefabs[Math.floor(Math.random() * prefabs.length)]();
-  const shadow = new THREE.Mesh(geo.shadow, matShadow);
-  shadow.rotation.x = -Math.PI / 2; shadow.position.y = 0.004; obj.add(shadow);
-
-  obj.position.set(CONFIG.lanes[lane], 0, -CONFIG.spawnDistance);
+function spawnAt(lane, zJitter = 0) {
+  const obj = templates[Math.floor(Math.random() * templates.length)].clone();
+  obj.position.set(laneX(lane), 0, -CONFIG.spawnDistance + zJitter);
   obj.userData.age = 0;
   obj.scale.setScalar(0.01);
   world.add(obj);
@@ -171,8 +324,46 @@ function clearObstacles() {
   obstacles.length = 0;
 }
 
+/* Decide which lanes get an obstacle in the next row.
+   EASY   : exactly one lane blocked.
+   MEDIUM : about half the lanes blocked, one open lane drifts gradually.
+   HARD   : most lanes blocked (but never all), the open lane wanders unpredictably,
+            row timing and depth are jittered. The open lane only ever shifts by one lane
+            per row, so there is always a reachable stickhandling path. */
+function planRow() {
+  const n = state.lanes;
+  if (state.difficulty === 'easy') return [randInt(0, n - 1)];
+
+  const step = state.difficulty === 'hard'
+    ? randInt(-1, 1)
+    : (Math.random() < 0.5 ? 0 : (Math.random() < 0.5 ? -1 : 1));
+  state.safeLane = clamp(state.safeLane + step, 0, n - 1);
+
+  let lo, hi;
+  if (state.difficulty === 'medium') { lo = Math.floor(n / 2); hi = Math.ceil(n / 2); }
+  else { lo = Math.ceil(n / 2); hi = n - 1; }
+  const k = Math.min(randInt(lo, hi), n - 1);
+
+  const cands = [];
+  for (let i = 0; i < n; i++) if (i !== state.safeLane) cands.push(i);
+  for (let i = cands.length - 1; i > 0; i--) {            // shuffle
+    const j = Math.floor(Math.random() * (i + 1));
+    [cands[i], cands[j]] = [cands[j], cands[i]];
+  }
+  return cands.slice(0, k);
+}
+function spawnRow() {
+  const hard = state.difficulty === 'hard';
+  planRow().forEach(lane => {
+    const zj = hard ? (Math.random() * 2 - 1) * CONFIG.hardDepthJitter : 0;
+    spawnAt(lane, zj);
+  });
+  const [a, b] = CONFIG.hardIntervalJitter;
+  state.nextInterval = intervalFor(state.level) * (hard ? a + Math.random() * (b - a) : 1);
+}
+
 /* ============================== UI PANEL ============================== */
-const CW = 1024, CH = 512;
+const CW = 1024, CH = 640;
 const canvas = document.createElement('canvas'); canvas.width = CW; canvas.height = CH;
 const ctx = canvas.getContext('2d');
 const panelTex = new THREE.CanvasTexture(canvas);
@@ -185,12 +376,17 @@ const panel = new THREE.Mesh(
 );
 world.add(panel);
 
+const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
 const buttons = [
-  { id: 'slower',  x: 40,  y: 235, w: 200, h: 115, label: '−  SPEED' },
-  { id: 'toggle',  x: 262, y: 235, w: 500, h: 115, label: '' },
-  { id: 'faster',  x: 784, y: 235, w: 200, h: 115, label: 'SPEED  +' },
-  { id: 'reset',   x: 40,  y: 375, w: 300, h: 90,  label: 'RESET' },
-  { id: 'recenter',x: 684, y: 375, w: 300, h: 90,  label: 'RECENTER' }
+  { id: 'slower',   x: 40,  y: 215, w: 200, h: 100, label: '−  SPEED' },
+  { id: 'toggle',   x: 262, y: 215, w: 500, h: 100, label: '' },
+  { id: 'faster',   x: 784, y: 215, w: 200, h: 100, label: 'SPEED  +' },
+  ...CONFIG.laneOptions.map((n, i) => ({ id: 'lanes' + n, x: 240 + i * 234, y: 332, w: 220, h: 70,
+      label: n + ' LANES', sel: () => state.lanes === n })),
+  ...CONFIG.difficulties.map((d, i) => ({ id: 'diff' + d, x: 240 + i * 234, y: 418, w: 220, h: 70,
+      label: d.toUpperCase(), sel: () => state.difficulty === d })),
+  { id: 'reset',    x: 40,  y: 508, w: 300, h: 80,  label: 'RESET' },
+  { id: 'recenter', x: 684, y: 508, w: 300, h: 80,  label: 'RECENTER' }
 ];
 
 function rr(x, y, w, h, r) {
@@ -210,54 +406,83 @@ const fmtTime = t => {
 let lastTimerText = '';
 function drawPanel() {
   ctx.clearRect(0, 0, CW, CH);
-  ctx.fillStyle = 'rgba(10,18,34,0.88)';
+  ctx.fillStyle = 'rgba(10,18,34,0.9)';
   rr(0, 0, CW, CH, 36); ctx.fill();
   ctx.strokeStyle = 'rgba(76,201,240,0.8)'; ctx.lineWidth = 5;
   rr(3, 3, CW - 6, CH - 6, 34); ctx.stroke();
 
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#9fb3d1'; ctx.font = '600 34px system-ui, sans-serif';
-  ctx.fillText('STICKHANDLING TRAINER', CW / 2, 42);
+  ctx.fillStyle = '#9fb3d1'; ctx.font = '600 32px system-ui, sans-serif';
+  ctx.fillText('STICKHANDLING TRAINER', CW / 2, 38);
 
-  ctx.fillStyle = '#ffffff'; ctx.font = '700 112px ui-monospace, Menlo, Consolas, monospace';
-  ctx.fillText(fmtTime(state.elapsed), CW / 2, 130);
+  ctx.fillStyle = '#ffffff'; ctx.font = '700 104px ui-monospace, Menlo, Consolas, monospace';
+  ctx.fillText(fmtTime(state.elapsed), CW / 2, 112);
 
-  ctx.fillStyle = '#ffd166'; ctx.font = '600 36px system-ui, sans-serif';
+  ctx.fillStyle = '#ffd166'; ctx.font = '600 34px system-ui, sans-serif';
   ctx.fillText('Level ' + state.level + '  ·  ' + speedFor(state.level).toFixed(1) + ' m/s  ·  Passed ' + state.passed,
-    CW / 2, 200);
+    CW / 2, 178);
+
+  ctx.textAlign = 'left'; ctx.fillStyle = '#9fb3d1'; ctx.font = '700 28px system-ui, sans-serif';
+  ctx.fillText('LANES', 40, 368);
+  ctx.font = '700 25px system-ui, sans-serif';
+  ctx.fillText('DIFFICULTY', 40, 454);
+  ctx.textAlign = 'center';
 
   buttons.forEach(b => {
     const hov = state.hovered === b.id;
+    const sel = b.sel && b.sel();
     let base = '#24324d';
     let label = b.label;
     if (b.id === 'toggle') {
       label = state.mode === 'running' ? 'PAUSE' : state.mode === 'paused' ? 'RESUME' : 'START';
       base = state.mode === 'running' ? '#f4a261' : '#2a9d58';
     }
+    if (sel) base = '#1d6fa5';
     if (b.id === 'slower' && state.level <= CONFIG.minLevel) base = '#1a2236';
     if (b.id === 'faster' && state.level >= CONFIG.maxLevel) base = '#1a2236';
     ctx.fillStyle = hov ? '#4cc9f0' : base;
-    rr(b.x, b.y, b.w, b.h, 22); ctx.fill();
+    rr(b.x, b.y, b.w, b.h, 20); ctx.fill();
+    if (sel && !hov) { ctx.strokeStyle = '#4cc9f0'; ctx.lineWidth = 4; rr(b.x, b.y, b.w, b.h, 20); ctx.stroke(); }
     ctx.fillStyle = hov ? '#0b1220' : '#ffffff';
-    ctx.font = (b.id === 'toggle' ? '800 62px' : '700 34px') + ' system-ui, sans-serif';
+    const big = b.id === 'toggle';
+    ctx.font = (big ? '800 62px' : b.h <= 70 ? '700 30px' : '700 32px') + ' system-ui, sans-serif';
     ctx.fillText(label, b.x + b.w / 2, b.y + b.h / 2 + 2);
   });
   panelTex.needsUpdate = true;
 }
 drawPanel();
 
+function resetRun() {
+  state.mode = 'idle'; state.elapsed = 0; state.passed = 0;
+  state.spawnTimer = 0; state.nextInterval = 0.5;
+  state.safeLane = Math.floor(state.lanes / 2);
+  clearObstacles();
+  lastTimerText = '';
+}
+
 function pressButton(id) {
-  switch (id) {
-    case 'toggle':
-      state.mode = state.mode === 'running' ? 'paused' : 'running';
-      break;
-    case 'slower': state.level = Math.max(CONFIG.minLevel, state.level - 1); break;
-    case 'faster': state.level = Math.min(CONFIG.maxLevel, state.level + 1); break;
-    case 'reset':
-      state.mode = 'idle'; state.elapsed = 0; state.passed = 0; state.spawnTimer = 0;
-      clearObstacles();
-      break;
-    case 'recenter': state.needsPlace = true; break;
+  if (id.startsWith('lanes')) {
+    const n = parseInt(id.slice(5), 10);
+    if (n !== state.lanes) {
+      state.lanes = n; rebuildLanes();
+      state.safeLane = Math.floor(n / 2);
+      clearObstacles(); state.spawnTimer = 0; state.nextInterval = 0.5;
+      saveSettings();
+    }
+  } else if (id.startsWith('diff')) {
+    const d = id.slice(4);
+    if (d !== state.difficulty) {
+      state.difficulty = d; state.safeLane = Math.floor(state.lanes / 2);
+      saveSettings();
+    }
+  } else {
+    switch (id) {
+      case 'toggle': state.mode = state.mode === 'running' ? 'paused' : 'running'; break;
+      case 'slower': state.level = Math.max(CONFIG.minLevel, state.level - 1); saveSettings(); break;
+      case 'faster': state.level = Math.min(CONFIG.maxLevel, state.level + 1); saveSettings(); break;
+      case 'reset': resetRun(); break;
+      case 'recenter': state.needsPlace = true; break;
+    }
   }
   drawPanel();
 }
@@ -319,7 +544,6 @@ renderer.setAnimationLoop(() => {
   if (renderer.xr.isPresenting) {
     if (state.needsPlace) placeWorld();
 
-    // hover feedback + ray length
     let hovered = null;
     controllers.forEach(c => {
       const ray = c.getObjectByName('ray');
@@ -335,9 +559,9 @@ renderer.setAnimationLoop(() => {
     const speed = speedFor(state.level);
 
     state.spawnTimer += dt;
-    if (state.spawnTimer >= intervalFor(state.level)) {
+    if (state.spawnTimer >= state.nextInterval) {
       state.spawnTimer = 0;
-      spawnObstacle();
+      spawnRow();
     }
 
     for (let i = obstacles.length - 1; i >= 0; i--) {
@@ -347,7 +571,7 @@ renderer.setAnimationLoop(() => {
       o.scale.setScalar(Math.min(1, 0.01 + o.userData.age / 0.35));
       if (o.position.z > CONFIG.despawnZ) {
         world.remove(o); obstacles.splice(i, 1); state.passed++;
-        lastTimerText = ''; // force redraw
+        lastTimerText = '';
       }
     }
 
@@ -362,7 +586,6 @@ renderer.setAnimationLoop(() => {
 const enterBtn = document.getElementById('enter');
 const msg = document.getElementById('msg');
 const ui = document.getElementById('ui');
-let currentSession = null;
 
 async function checkSupport() {
   if (!navigator.xr) {
@@ -387,13 +610,10 @@ enterBtn.addEventListener('click', async () => {
       requiredFeatures: ['local-floor'],
       optionalFeatures: ['hand-tracking']
     });
-    currentSession = session;
     session.addEventListener('end', () => {
-      currentSession = null;
       renderer.domElement.style.display = 'none';
       ui.style.display = 'flex';
-      state.mode = 'idle'; state.elapsed = 0; state.passed = 0; state.spawnTimer = 0;
-      clearObstacles(); drawPanel();
+      resetRun(); drawPanel();
     });
     await renderer.xr.setSession(session);
     state.needsPlace = true;
