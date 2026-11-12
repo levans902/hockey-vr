@@ -1,64 +1,63 @@
-# 🏒 Stickhandling MR
+# 🏒 SickMitts VR
 
-A mixed-reality hockey stickhandling trainer for the **Meta Quest 3**, running entirely in the Quest Browser. Obstacles slide across your real floor toward your feet while you see your room through passthrough. Read them early, then stickhandle around them.
+A mixed-reality hockey stickhandling trainer for the **Meta Quest 3**, running entirely in the Quest Browser. You see your real floor through passthrough, keep using your **real puck on your hockey pad**, and the game adds virtual obstacles and defenders around you. There is no virtual puck.
 
-It is a single `index.html` file built with [Three.js](https://threejs.org/) and WebXR. There is no build step and nothing to install on the headset.
+The whole game is a single `index.html` built with [Three.js](https://threejs.org/) and WebXR. There is no build step and nothing to install on the headset.
 
-## Features
+## Game modes
 
-- **True mixed reality:** full-color passthrough, so you train on your own floor (`immersive-ar` session with a `local-floor` reference space).
-- **6 obstacle types:** water bottles, pylons, sticks of dynamite, hockey skates, hockey gloves and mini nets.
-- **3, 4 or 5 lanes:** pick the width of your training area.
-- **4 difficulty modes:** Easy, Medium, Hard and Pro.
-- **10 speed levels:** from about 1.0 m/s up to about 3.7 m/s.
-- **Floating control panel:** start/pause, speed, lanes, difficulty, timer, reset and recenter, all at eye level.
-- **Controllers or hands:** point and pull the trigger, or point and pinch with hand tracking.
-- **Remembers your settings:** lanes, difficulty and speed level are saved between sessions.
+Use the ◀ ▶ arrows at the top of the floating panel to switch modes. Each mode remembers its own speed setting.
 
-## Requirements
-
-- Meta Quest 3 or Quest 3S with the Meta Quest Browser
-- The page served over **HTTPS** (GitHub Pages, Vercel and Netlify all work)
-- A clear floor area. The play zone is about 4 m long by up to 2.75 m wide (5 lanes), plus space to move.
-
-## Quick start
-
-1. Open the hosted page in the Meta Quest Browser - https://levans902.github.io/hockey-vr/
-2. Tap **Enter Mixed Reality** and allow the permission prompt.
-3. Stand where you want to train and face the direction the obstacles should come from. The play area anchors to your position and facing when you enter.
-4. Use a controller ray or a hand pinch on the floating panel to choose your settings, then press **START**.
-
-## How to play
-
-Obstacles spawn 4 m in front of you at floor level and slide toward your feet along the lanes. Faint blue strips on the floor show the lanes, and a white ring marks your spot. Carry the puck around the obstacles by reading them as they approach. The timer runs while you play, and the panel counts how many obstacles have passed you.
-
-There is no collision scoring yet. It is a training tool, so judge your own clean passes.
-
-## Control panel
-
-| Control | What it does |
+| Mode | What it trains |
 | --- | --- |
-| **START / PAUSE / RESUME** | Starts, freezes or continues the session. Obstacles freeze while paused. |
-| **− SPEED / SPEED +** | Changes the level from 1 to 10. |
-| **3 / 4 / 5 LANES** | Sets the number of lanes. This clears the floor. |
-| **EASY / MEDIUM / HARD / PRO** | Sets how obstacles are laid out (see below). |
-| **RESET** | Stops the session and clears the timer, count and floor. |
-| **RECENTER** | Re-anchors the play area and panel to where you are standing and facing. |
+| **Endless Object Treadmill** (default) | Reading objects early and stickhandling around them across several lanes. |
+| **Keep Away** | Protecting the puck from opposing defencemen who skate around you and attack. |
+| **Insanity** | Toe drags and tight, fancy hands through dense clutter in one wide lane. |
 
-## Difficulty modes
+### Endless Object Treadmill
 
-| Mode | Behavior |
+Objects spawn 4 m in front of you at floor level and slide along the floor toward your feet.
+
+- **Lanes:** choose 3, 4 or 5 lanes. Faint blue strips on the floor show them, and a white ring marks your spot.
+- **Difficulty** controls how objects are laid out:
+
+| Difficulty | Behavior |
 | --- | --- |
-| **Easy** | One obstacle, in one random lane, per spawn. |
+| **Easy** | One object, in one random lane, per spawn. |
 | **Medium** | About half the lanes are filled in each wave. The open gap drifts gradually. |
-| **Hard** | Most lanes are filled, but never all. The open lane wanders unpredictably, wave timing varies and objects are offset front to back. |
-| **Pro** | No waves. Single obstacles appear at random times in random lanes, like a scattered obstacle field. |
+| **Hard** | Most lanes are filled but never all. The open lane wanders unpredictably, and wave timing and depth are jittered. |
+| **Pro** | No waves. Single objects appear at random times in random lanes, like a scattered obstacle field. |
 
-Medium, Hard and Pro always keep a path open, so every layout can be stickhandled by a good player. In Pro, a hidden open lane never gets obstacles. It can only shift one lane at a time, and always leaves at least 0.7 seconds to move over.
+Medium, Hard and Pro always keep a path open, so every layout can be stickhandled by a good player. In Pro, a hidden open lane never gets objects. It must move after a short time, and any lane left empty for too long gets the next object, so standing in one lane doesn't work.
 
-## Obstacles
+### Keep Away
 
-Each spawn picks one of these at random:
+Opposing defencemen skate around you in the zone in front of and beside you, never behind. They always face you and skate forwards, backwards and sideways. At random times they set up, lunge at where your puck is, swing their stick, then back off and reset.
+
+| Difficulty | Defenders | Extras |
+| --- | --- | --- |
+| **Easy** | 1 | One attack at a time. |
+| **Medium** | 2 | One attack at a time. |
+| **Hard** | 3 | Up to two attacks at once, with occasional fake lunges. |
+| **Pro** | 4 | Up to two attacks at once, with more fake lunges and a tighter zone. |
+
+- **Zone:** a faint half-circle on the floor, 3.2 m out, marks the area in front of and beside you.
+- **Personal space:** defenders never come closer than about 0.75 m to your body.
+- **Puck position:** the game assumes your real puck is about 0.55 m in front of you.
+- **Speed:** levels 1 to 10 set both the skating and lunge speed, and shorten the wait between attacks at higher levels.
+- There is no hit detection. The defenders can't actually take your puck, so it is a training aid rather than a scored game.
+
+### Insanity
+
+One lane, as wide as three treadmill lanes (1.65 m), packed with the same objects. Instead of switching lanes, you have to work through the clutter with toe drags and fancy handles.
+
+- **Density 1 to 10:** density 1 is a sparse scatter with wide gaps. Density 10 is about four objects per metre of lane with only about 20 cm between neighbours.
+- **Always passable:** a hidden open path winds slowly through the clutter, so there is always a way through, even at density 10.
+- **Speed:** levels 1 to 10, the same speeds as the treadmill.
+
+## Objects
+
+Each object is built from Three.js shapes, so there are no external assets.
 
 - **Water bottle:** clear blue bottle with a label and an orange nozzle
 - **Pylon:** classic orange training cone
@@ -67,15 +66,63 @@ Each spawn picks one of these at random:
 - **Hockey gloves:** a pair lying flat on the floor
 - **Mini net:** a red-framed net with translucent netting
 
-## Speed levels
+Both the Treadmill and Insanity use all six. Keep Away uses full-size defencemen in red jerseys instead.
 
-Speed is `0.7 + level × 0.3` metres per second, so level 1 is 1.0 m/s and level 10 is 3.7 m/s. Higher levels also shorten the time between spawns.
+## Control panel
+
+A floating panel sits about 1 m in front of you near eye level. Aim a controller ray at it and pull the trigger, or point and pinch with hand tracking.
+
+| Control | What it does |
+| --- | --- |
+| **◀ ▶** | Switches game mode. |
+| **START / PAUSE / RESUME** | Starts, freezes or continues the session. Everything freezes while paused. |
+| **− SPEED / SPEED +** | Sets the speed level, 1 to 10, for the current mode. |
+| **3 / 4 / 5 LANES** | Treadmill only: number of lanes. |
+| **EASY / MEDIUM / HARD / PRO** | Treadmill and Keep Away: layout or defender count. |
+| **DENSITY − / +** | Insanity only: clutter level, 1 to 10. |
+| **RESET** | Stops the session and clears the timer, counts and floor. |
+| **RECENTER** | Re-anchors the play area and panel to where you are standing and facing. |
+
+The panel also shows a timer, the level and speed, and either how many objects have passed you or how many attacks have been made. Your last mode, lanes, difficulty, speed levels and density are saved on the headset between sessions.
+
+## Speeds
+
+| Mode | Speed at level 1 | Speed at level 10 |
+| --- | --- | --- |
+| **Treadmill / Insanity** | 1.0 m/s | 3.7 m/s |
+| **Keep Away** (lunge speed) | 1.4 m/s | 3.7 m/s |
+
+## Requirements
+
+- Meta Quest 3 or Quest 3S with the Meta Quest Browser
+- The page served over **HTTPS** (GitHub Pages, Vercel and Netlify all work)
+- A clear floor area: about 4 m deep in front of you, and up to about 2.75 m wide with 5 lanes. Keep Away uses a zone about 3.2 m out.
+
+## Quick start
+
+1. Open the hosted page in the Meta Quest Browser.
+2. Tap **Enter Mixed Reality** and allow the permission prompt.
+3. Stand where you want to train and face the direction things should come from. The play area anchors to your position and facing when you enter.
+4. Pick a game with the arrows, adjust the settings, then press **START**.
+5. Stickhandle your real puck on your pad.
+
+## Files
+
+Put all of these in the same folder:
+
+| File | Purpose |
+| --- | --- |
+| `index.html` | The whole game. |
+| `manifest.webmanifest` | App name, colors and icons for a home-screen shortcut. |
+| `icon-192.png`, `icon-512.png` | Shortcut / app icons. |
+| `apple-touch-icon.png` | Touch icon (180 × 180). |
+| `favicon-48.png` | Browser tab icon. |
 
 ## Deploying
 
-Because it is a single static file, any static host works.
+Because it is a static site, any static host works.
 
-**GitHub Pages:** push `index.html` to a repo, then enable Pages under *Settings → Pages* and open the published URL on your Quest.
+**GitHub Pages:** push the files to a repo, then enable Pages under *Settings → Pages* and open the published URL on your Quest.
 
 **Vercel / Netlify:** import the repo and deploy with no build command. The output is the repo root.
 
@@ -83,33 +130,37 @@ Three.js loads from the jsDelivr CDN through an import map, so the headset needs
 
 ## Customizing
 
-Everything adjustable is in the `CONFIG` object near the top of the script in `index.html`:
+Everything adjustable is in the `CONFIG` object near the top of the script in `index.html`.
 
 | Setting | Purpose |
 | --- | --- |
-| `spawnDistance` | How far ahead obstacles appear, in metres. |
-| `laneSpacing` | Distance between lane centres. |
-| `baseSpeed`, `speedStep` | Speed at each level. |
-| `spawnIntervalBase`, `spawnIntervalPerLevel`, `spawnIntervalMin` | Time between spawns. |
+| `spawnDistance`, `laneSpacing` | How far ahead objects appear, and the space between lanes. |
+| `baseSpeed`, `speedStep` | Treadmill and Insanity speed at each level. |
+| `spawnIntervalBase`, `spawnIntervalPerLevel`, `spawnIntervalMin` | Time between waves on the Treadmill. |
 | `startLevel`, `startLanes`, `startDifficulty` | Defaults on first launch. |
 | `hardIntervalJitter`, `hardDepthJitter` | How irregular Hard feels. |
-| `proExtra`, `proIntervalJitter`, `proMinDepthGap`, `proShiftTime`, `proShiftChance` | Pro density and fairness. A smaller `proShiftTime` is harder. |
+| `proExtra`, `proIntervalJitter`, `proMinDepthGap`, `proShiftTime`, `proMaxSafeHold`, `proMaxEmpty` | Treadmill Pro density and fairness. A smaller `proShiftTime` is harder. |
+| `insanity.targetMax`, `gapMin`, `pathSlope` | Insanity: objects at density 10, tightest gap, and how quickly the open path wanders. |
+| `keepAway.defenderScale` | How big the defenders look (1.0 is full size). |
+| `keepAway.puckOffset` | Where the game assumes your puck is in front of you. |
+| `keepAway.maxRadius`, `attackGap`, `perDifficulty` | Zone size, spacing between attacks, and each difficulty's defender count and aggression. |
 | `panelDistance`, `panelWidth`, `panelHeightOffset` | Size and position of the control panel. |
 
 ## Troubleshooting
 
 - **"WebXR not available":** open the page over HTTPS in the Meta Quest Browser, not a desktop browser.
 - **No passthrough:** make sure passthrough is enabled in your Quest settings, and enter with the button on the page.
-- **Panel or lanes are in the wrong place:** press **RECENTER** while standing where you want to train.
+- **Panel or play area in the wrong place:** press **RECENTER** while standing where you want to train.
 - **Panel too high or low:** adjust `panelHeightOffset` in `CONFIG`.
-- **Can't press panel buttons:** aim the controller ray (or pinch ray) at the button until it highlights, then pull the trigger or pinch.
+- **Can't press panel buttons:** aim the controller or pinch ray at the button until it highlights, then pull the trigger or pinch.
+- **Changes don't show up:** the Quest Browser caches pages heavily. Check the small `build` label on the start screen and at the bottom of the panel to see which copy you have, then clear the site data in the browser settings and reload.
+- **Home-screen icon didn't update:** delete the old shortcut and create it again. Existing shortcuts tend to keep their old icon.
 
 ## Tech notes
 
 - Three.js 0.160 (ES module via import map)
-- WebXR Device API, `immersive-ar`, `local-floor`, optional `hand-tracking`
-- The control panel is a canvas texture on a plane, with ray-picking from the XR controllers
-- Obstacle models are built from Three.js primitives, so there are no external assets
+- WebXR Device API: `immersive-ar`, `local-floor`, optional `hand-tracking`
+- The control panel is a canvas texture on a plane, with ray picking from the XR controllers
 - Pixel ratio is fixed at 1 with fixed foveation, to keep a steady frame rate on Quest
 
 ## License
