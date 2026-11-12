@@ -38,7 +38,7 @@
 <script type="module">
 import * as THREE from 'three';
 
-const BUILD = 'insanity-1';   // shown on the start screen and panel so you can tell which copy is loaded
+const BUILD = 'insanity-7';   // shown on the start screen and panel so you can tell which copy is loaded
 document.getElementById('build').textContent = 'build ' + BUILD;
 
 /* ============================== CONFIG ============================== */
@@ -75,8 +75,8 @@ const CONFIG = {
     chunkLength: 0.8,          // metres of clutter generated at a time
     targetMin: 0.7, targetMax: 5.0,   // objects per metre of lane at density 1 / density 10
     gapMax: 0.95, gapMin: 0.2,        // clear floor between neighbouring objects at density 1 / 10
-    pathSlope: 0.4,            // how fast the guaranteed open path may wander sideways
-    pathMinHalf: 0.14,         // half-width (m) of the guaranteed open path through the clutter
+    pathSlope: 0.4,            // how sharply (sideways m per forward m) a route through the clutter may turn
+    pathClear: 0.07,           // room (m) your puck needs either side of the route (puck radius is about 0.04)
     startDensity: 4, startLevel: 2
   },
   keepAway: {
@@ -399,19 +399,140 @@ function makeMiniNet() {
 
 /* ---------- build templates once, clone per spawn (clones share geometry/materials) ---------- */
 const shadowGeo = new THREE.CircleGeometry(1, 28);
-const templates = [makeWaterBottle, makePylon, makeDynamite, makeSkates, makeGloves, makeMiniNet].map(fn => {
+function wrapTemplate(fn) {
   const { obj, shadow } = fn();
   const s = new THREE.Mesh(shadowGeo, mat.shadow);
-  s.rotation.x = -Math.PI / 2; s.position.y = 0.004; s.scale.setScalar(shadow);
+  const [sx, sz] = Array.isArray(shadow) ? shadow : [shadow, shadow];
+  s.rotation.x = -Math.PI / 2; s.position.y = 0.004; s.scale.set(sx, sz, 1);
   const root = new THREE.Group(); root.add(obj, s);
   return root;
+}
+/* the six objects used by the Endless Object Treadmill (and Insanity) */
+const templates = [makeWaterBottle, makePylon, makeDynamite, makeSkates, makeGloves, makeMiniNet].map(wrapTemplate);
+
+/* ---------- bigger, oddly shaped objects (Insanity only) ---------- */
+const xm = {
+  stickBlack: mat.black, stickGray: std(0x9aa5b1), tapeW: mat.white, band: mat.redGloss,
+  bagNavy: std(0x1c2b4a, { roughness: 0.8 }), strap: std(0x0e1118),
+  padWhite: std(0xf4f6f8, { roughness: 0.6 }), padBlue: std(0x1d6fa5),
+  bucket: std(0x2a6df4, { roughness: 0.5 }), puck: std(0x0b0c10, { roughness: 0.7 }),
+  helmet: std(0xf1f5f9, { roughness: 0.3 }), helmetDark: std(0x2a2f38)
+};
+
+/* A hockey stick lying flat: shaft along X, blade angled off the end. Overall about 1.5 m. */
+function buildStick(shaftMat, bandMat) {
+  const g = new THREE.Group();
+  g.add(box(1.2, 0.028, 0.026, shaftMat, -0.15, 0.014, 0));          // shaft
+  g.add(box(0.26, 0.03, 0.03, bandMat, -0.62, 0.015, 0));            // grip tape near the butt end
+  const blade = box(0.3, 0.03, 0.07, shaftMat, 0.588, 0.015, 0.058); blade.rotation.y = -0.4; g.add(blade);
+  const tape = box(0.14, 0.032, 0.072, xm.tapeW, 0.615, 0.016, 0.07); tape.rotation.y = -0.4; g.add(tape);
+  return g;
+}
+function makeStick(k, shaftMat, bandMat) {
+  const g = buildStick(shaftMat, bandMat); g.scale.setScalar(k);
+  return { obj: g, shadow: [0.75 * k, 0.1] };
+}
+function makeGoalieStick() {                                          // long shaft + wide paddle
+  const g = new THREE.Group();
+  g.add(box(0.75, 0.03, 0.03, xm.stickBlack, -0.425, 0.015, 0));
+  g.add(box(0.7, 0.036, 0.2, xm.padWhite, 0.3, 0.018, 0));
+  g.add(box(0.7, 0.038, 0.05, xm.band, 0.3, 0.019, 0));
+  g.add(box(0.2, 0.032, 0.032, xm.band, -0.7, 0.016, 0));
+  const blade = box(0.3, 0.036, 0.09, xm.stickBlack, 0.788, 0.018, 0.058); blade.rotation.y = -0.4; g.add(blade);
+  return { obj: g, shadow: [0.8, 0.12] };
+}
+function makeBag() {                                                  // big equipment duffel
+  const g = new THREE.Group();
+  const body = mesh(new THREE.CapsuleGeometry(0.17, 0.5, 6, 16), xm.bagNavy, 0, 0.14, 0);
+  body.rotation.z = Math.PI / 2; body.scale.set(0.82, 1, 1.05); g.add(body);
+  g.add(box(0.7, 0.012, 0.12, xm.band, 0, 0.284, 0));                 // top stripe
+  g.add(box(0.4, 0.14, 0.05, xm.strap, 0, 0.12, 0.19));               // end pocket
+  g.add(tube([-0.15, 0.27, 0], [-0.1, 0.34, 0], 0.012, xm.strap));    // carry handle
+  g.add(tube([-0.1, 0.34, 0], [0.1, 0.34, 0], 0.012, xm.strap));
+  g.add(tube([0.1, 0.34, 0], [0.15, 0.27, 0], 0.012, xm.strap));
+  return { obj: g, shadow: [0.5, 0.25] };
+}
+function makePad() {                                                  // goalie leg pad lying flat
+  const g = new THREE.Group();
+  g.add(box(0.85, 0.09, 0.22, xm.padWhite, 0, 0.045, 0));
+  g.add(box(0.85, 0.092, 0.06, xm.padBlue, 0, 0.046, 0));
+  [-0.28, -0.05, 0.18].forEach(x => g.add(box(0.045, 0.095, 0.225, xm.strap, x, 0.047, 0)));
+  const roll = cyl(0.07, 0.07, 0.22, xm.padWhite, 0.36, 0.09, 0, 16); roll.rotation.x = Math.PI / 2; g.add(roll);
+  return { obj: g, shadow: [0.46, 0.15] };
+}
+function makeBucket() {                                               // bucket of pucks
+  const g = new THREE.Group();
+  g.add(cyl(0.17, 0.14, 0.42, xm.bucket, 0, 0.21, 0, 24));
+  g.add(cyl(0.178, 0.178, 0.03, xm.helmetDark, 0, 0.42, 0, 24));
+  [[0, 0.445, 0, 0], [0.06, 0.47, 0.03, 0.35], [-0.05, 0.5, -0.03, -0.3], [0.0, 0.53, 0.05, 0.2]].forEach(([x, y, z, rz]) => {
+    const pk = cyl(0.038, 0.038, 0.025, xm.puck, x, y, z, 16); pk.rotation.z = rz; g.add(pk);
+  });
+  return { obj: g, shadow: [0.26, 0.26] };
+}
+function makeHelmet() {
+  const g = new THREE.Group();
+  const shell = mesh(new THREE.SphereGeometry(0.15, 20, 14), xm.helmet, 0, 0.13, 0);
+  shell.scale.set(0.95, 0.9, 1.2); g.add(shell);
+  g.add(box(0.2, 0.05, 0.03, xm.helmetDark, 0, 0.14, 0.19));
+  [-1, 1].forEach(sx => g.add(box(0.03, 0.08, 0.12, xm.helmetDark, sx * 0.14, 0.1, 0.02)));
+  return { obj: g, shadow: [0.18, 0.2] };
+}
+function makeCrossedSticks() {                                        // two sticks crossed over each other
+  const g = new THREE.Group();
+  const a = buildStick(xm.stickBlack, xm.band); a.rotation.y = 0.5;
+  const b = buildStick(xm.stickGray, xm.tapeW); b.rotation.y = -0.45; b.position.set(0, 0.035, 0.04);
+  g.add(a, b);
+  return { obj: g, shadow: [0.7, 0.5] };
+}
+const extraTemplates = [
+  () => makeStick(1.0, xm.stickBlack, xm.band), () => makeStick(0.85, xm.stickGray, xm.tapeW),
+  makeGoalieStick, makeBag, makePad, makeBucket, makeHelmet, makeCrossedSticks
+].map(wrapTemplate);
+const allTemplates = templates.concat(extraTemplates);                 // Insanity picks from all 14
+
+/* @FP-BEGIN */
+/* Floor footprints used by Insanity to keep clear gaps. Each footprint is one or more "capsules"
+   (a line segment with a radius) in the object's own X/Z coordinates, so a stick blocks the strip it really covers. */
+const rotCaps = (caps, a, dx = 0, dz = 0) => caps.map(c => {
+  const ca = Math.cos(a), sa = Math.sin(a);
+  return { ax: c.ax * ca + c.az * sa + dx, az: -c.ax * sa + c.az * ca + dz,
+           bx: c.bx * ca + c.bz * sa + dx, bz: -c.bx * sa + c.bz * ca + dz, r: c.r };
 });
+const stickCaps = k => [
+  { ax: -0.75 * k, az: 0, bx: 0.45 * k, bz: 0, r: 0.04 * k },
+  { ax: 0.45 * k, az: 0, bx: 0.726 * k, bz: 0.117 * k, r: 0.05 * k }
+];
+const GOALIE_CAPS = [
+  { ax: -0.8, az: 0, bx: -0.05, bz: 0, r: 0.035 },
+  { ax: -0.05, az: 0, bx: 0.65, bz: 0, r: 0.1 },
+  { ax: 0.65, az: 0, bx: 0.926, bz: 0.117, r: 0.055 }
+];
+const BAG_CAPS = [{ ax: -0.26, az: 0, bx: 0.26, bz: 0, r: 0.2 }];
+const PAD_CAPS = [{ ax: -0.33, az: 0, bx: 0.33, bz: 0, r: 0.12 }];
+const CROSS_CAPS = rotCaps(stickCaps(1), 0.5).concat(rotCaps(stickCaps(1), -0.45, 0, 0.04));
+const circ = r => ({ caps: [{ ax: 0, az: 0, bx: 0, bz: 0, r }], spin: false });
+const lng = caps => ({ caps, spin: true });
+const FP = [                       // same order as allTemplates
+  circ(0.12), circ(0.19), circ(0.10), circ(0.22), circ(0.24), circ(0.27),      // bottle, pylon, dynamite, skates, gloves, net
+  lng(stickCaps(1)), lng(stickCaps(0.85)), lng(GOALIE_CAPS), lng(BAG_CAPS), lng(PAD_CAPS),
+  circ(0.18), circ(0.17), lng(CROSS_CAPS)                                      // bucket, helmet, crossed sticks
+];
+FP.forEach(f => { f.br = Math.max(...f.caps.map(c => Math.max(Math.hypot(c.ax, c.az), Math.hypot(c.bx, c.bz)) + c.r)); });
+/* how often each object is picked in Insanity (the bigger, odder ones are weighted up) */
+const IN_WEIGHTS = [1, 1, 1, 1, 1, 1, 1.6, 1.0, 0.7, 0.8, 0.8, 0.9, 0.8, 0.6];
+const IN_WSUM = IN_WEIGHTS.reduce((a, b) => a + b, 0);
+function pickInsanityTemplate() {
+  let r = Math.random() * IN_WSUM;
+  for (let i = 0; i < IN_WEIGHTS.length; i++) { r -= IN_WEIGHTS[i]; if (r <= 0) return i; }
+  return IN_WEIGHTS.length - 1;
+}
+/* @FP-END */
 
 /* ============================== OBSTACLE MANAGEMENT ============================== */
 const obstacles = [];
 
 function spawnObject(ti, x, z) {
-  const obj = templates[ti].clone();
+  const obj = allTemplates[ti].clone();
   obj.position.set(x, 0, z);
   obj.userData.age = 0;
   obj.scale.setScalar(0.01);
@@ -774,65 +895,167 @@ function updateTreadmill(dt) {
 }
 
 /* ============================== INSANITY ============================== */
-/* One wide lane (as wide as the treadmill's 3 lanes) packed with the same objects.
-   Objects are scattered at random with a minimum clear gap between neighbours; the gap shrinks and the
-   count grows with the density level. A hidden, gently wandering open path is always kept clear, so even
-   at density 10 there is always a way through, but it needs toe drags and tight hands to follow it. */
-const IN = { items: [], path: [], nextChunk: 0, travel: 0 };
-const IN_R = [0.12, 0.19, 0.10, 0.22, 0.24, 0.27];     // footprint radius of each object (bottle, pylon, dynamite, skates, gloves, net)
+/* One wide lane (as wide as the treadmill's 3 lanes) packed with objects of all sizes: the six treadmill objects
+   plus hockey sticks lying at any angle, a goalie stick, a crossed pair of sticks, an equipment bag, a goalie pad,
+   a bucket of pucks and a helmet. Objects are scattered at random with a minimum clear gap between neighbours; the
+   gap shrinks and the count grows with the density level. Every new object is also checked so that a route
+   through the lane always exists (stay inside the lane, turn no sharper than pathSlope, keep pathClear either side),
+   so even at density 10 there is a way through, but it needs toe drags and tight hands to follow it. */
+const IN = { items: [], front: null, nextChunk: 0, travel: 0 };
 const lerp = (a, b, t) => a + (b - a) * t;
 
 function insanityParams() {
   const t = (state.density - 1) / 9;
   return { target: lerp(IC.targetMin, IC.targetMax, t), gap: lerp(IC.gapMax, IC.gapMin, t) };
 }
+const RT = { ds: 0.05, clear: IC.pathClear + 0.015 };  // route check: row spacing along the track, puck clearance (with a safety margin)
 function resetInsanity() {
   IN.items = []; IN.travel = 0; IN.nextChunk = 0;
-  IN.path = [{ s: 0, x: (Math.random() * 2 - 1) * 0.4 }];
+  IN.front = { s: -1.1, reach: [[-IC.laneWidth / 2, IC.laneWidth / 2]] };
 }
-function extendPath(sEnd) {
-  const half = IC.laneWidth / 2 - 0.25;
-  while (IN.path[IN.path.length - 1].s < sEnd) {
-    const last = IN.path[IN.path.length - 1];
-    const step = (Math.random() * 2 - 1) * IC.pathSlope * IC.chunkLength;
-    IN.path.push({ s: last.s + IC.chunkLength, x: clamp(last.x + step, -half, half) });
+
+/* ---- 2D helpers (x = across the lane, y = distance along the track) ---- */
+function ptSegDist(px, py, ax, ay, bx, by) {
+  const vx = bx - ax, vy = by - ay, l2 = vx * vx + vy * vy;
+  const t = l2 > 1e-9 ? clamp(((px - ax) * vx + (py - ay) * vy) / l2, 0, 1) : 0;
+  return Math.hypot(px - (ax + vx * t), py - (ay + vy * t));
+}
+function capDist(a, b) {                            // gap between two capsules (negative = overlapping)
+  const o = (px, py, qx, qy, rx, ry) => (qx - px) * (ry - py) - (qy - py) * (rx - px);
+  const d1 = o(a.ax, a.ay, a.bx, a.by, b.ax, b.ay), d2 = o(a.ax, a.ay, a.bx, a.by, b.bx, b.by);
+  const d3 = o(b.ax, b.ay, b.bx, b.by, a.ax, a.ay), d4 = o(b.ax, b.ay, b.bx, b.by, a.bx, a.by);
+  let d = 0;
+  if (!(d1 * d2 < 0 && d3 * d4 < 0)) {
+    d = Math.min(ptSegDist(a.ax, a.ay, b.ax, b.ay, b.bx, b.by), ptSegDist(a.bx, a.by, b.ax, b.ay, b.bx, b.by),
+                 ptSegDist(b.ax, b.ay, a.ax, a.ay, a.bx, a.by), ptSegDist(b.bx, b.by, a.ax, a.ay, a.bx, a.by));
   }
-  while (IN.path.length > 8 && IN.path[1].s < IN.travel - 6) IN.path.shift();
+  return d - a.r - b.r;
 }
-function distToPath(x, s) {
-  let best = 99;
-  for (let i = 0; i + 1 < IN.path.length; i++) {
-    const a = IN.path[i], b = IN.path[i + 1];
-    if (b.s < s - 1.5 || a.s > s + 1.5) continue;
-    const vx = b.x - a.x, vs = b.s - a.s, wx = x - a.x, ws = s - a.s;
-    const t = clamp((wx * vx + ws * vs) / (vx * vx + vs * vs), 0, 1);
-    best = Math.min(best, Math.hypot(wx - vx * t, ws - vs * t));
+/* an object's capsules in track coordinates (object rotated by yaw, placed at x and track position s) */
+function worldCaps(caps, x, s, yaw) {
+  const c = Math.cos(yaw), si = Math.sin(yaw);
+  const wx = (lx, lz) => x + lx * c + lz * si;
+  const wy = (lx, lz) => s - (-lx * si + lz * c);   // track distance runs opposite to world Z
+  return caps.map(k => ({ ax: wx(k.ax, k.az), ay: wy(k.ax, k.az), bx: wx(k.bx, k.bz), by: wy(k.bx, k.bz), r: k.r }));
+}
+
+/* ---- route guarantee: can a puck still get through the lane? ----
+   Row by row along the track we find the stretches of open floor across the lane (lane minus every item's
+   keep-clear zone), and spread the "reachable" stretches forward, allowing sideways movement of pathSlope. */
+function blockedSlices(o, y, out) {                  // keep-clear x-intervals of item o at track position y
+  for (const c of o.caps) {
+    const R = c.r + RT.clear;
+    if (y < Math.min(c.ay, c.by) - R || y > Math.max(c.ay, c.by) + R) continue;
+    let lo = Infinity, hi = -Infinity;
+    const disk = (cx, cy) => {
+      const d = Math.abs(y - cy);
+      if (d < R) { const h = Math.sqrt(R * R - d * d); lo = Math.min(lo, cx - h); hi = Math.max(hi, cx + h); }
+    };
+    disk(c.ax, c.ay); disk(c.bx, c.by);
+    const vx = c.bx - c.ax, vy = c.by - c.ay, L = Math.hypot(vx, vy);
+    if (L > 1e-6) {                                   // the straight part of the capsule
+      const nx = -vy / L * R, ny = vx / L * R;
+      const P = [[c.ax + nx, c.ay + ny], [c.bx + nx, c.by + ny], [c.bx - nx, c.by - ny], [c.ax - nx, c.ay - ny]];
+      for (let i = 0; i < 4; i++) {
+        const p = P[i], q = P[(i + 1) % 4];
+        if ((p[1] - y) * (q[1] - y) <= 0 && p[1] !== q[1]) {
+          const x = p[0] + (q[0] - p[0]) * ((y - p[1]) / (q[1] - p[1]));
+          lo = Math.min(lo, x); hi = Math.max(hi, x);
+        }
+      }
+    }
+    if (lo <= hi) out.push([lo, hi]);
   }
-  return best;
 }
+function freeSlices(near, y) {                        // open x-intervals across the lane at track position y
+  const half = IC.laneWidth / 2, blocked = [];
+  for (const o of near) if (Math.abs(o.s - y) <= o.br + RT.clear) blockedSlices(o, y, blocked);
+  blocked.sort((p, q) => p[0] - q[0]);
+  const free = [];
+  let cur = -half;
+  for (const [lo, hi] of blocked) {
+    if (hi < -half || lo > half) continue;
+    if (lo > cur + 1e-6) free.push([cur, Math.min(lo, half)]);
+    cur = Math.max(cur, hi);
+    if (cur >= half) break;
+  }
+  if (cur < half - 1e-6) free.push([cur, half]);
+  return free;
+}
+/* spread the reachable stretches forward from track position fromS to toS (null if none remain) */
+function propagateRoute(reach, fromS, toS) {
+  const near = IN.items.filter(o => o.s + o.br + RT.clear > fromS && o.s - o.br - RT.clear < toS);
+  const delta = RT.ds * IC.pathSlope * 0.85;           // a little stricter than pathSlope, for safety
+  let cur = reach;
+  for (let y = fromS + RT.ds; y <= toS + 1e-9; y += RT.ds) {
+    const pieces = [];
+    for (const f of freeSlices(near, y)) {
+      for (const r of cur) {
+        const lo = Math.max(f[0], r[0] - delta), hi = Math.min(f[1], r[1] + delta);
+        if (lo <= hi) pieces.push([lo, hi]);
+      }
+    }
+    if (!pieces.length) return null;
+    pieces.sort((p, q) => p[0] - q[0]);
+    const merged = [pieces[0].slice()];
+    for (let i = 1; i < pieces.length; i++) {
+      const m = merged[merged.length - 1];
+      if (pieces[i][0] <= m[1]) m[1] = Math.max(m[1], pieces[i][1]); else merged.push(pieces[i].slice());
+    }
+    cur = merged;
+  }
+  return cur;
+}
+
 function generateInsanityChunk(g) {
   const { target, gap } = insanityParams();
-  extendPath(g + IC.chunkLength * 3);
-  const half = Math.max(IC.pathMinHalf, gap / 2);
   const count = Math.round(target * IC.chunkLength * (0.7 + Math.random() * 0.6));
-  let placed = 0, tries = 0;
-  while (placed < count && tries < 300) {
-    tries++;
-    const ti = Math.floor(Math.random() * templates.length), r = IN_R[ti];
-    const x = (Math.random() - 0.5) * IC.laneWidth;
-    const s = g + Math.random() * IC.chunkLength;
-    if (distToPath(x, s) < (r + half) * 1.1) continue;            // keep the open path clear
-    let ok = true;
-    for (const o of IN.items) {                                    // keep a gap around every neighbour
-      const need = o.r + r + gap;
-      if ((o.x - x) * (o.x - x) + (o.s - s) * (o.s - s) < need * need) { ok = false; break; }
+  const xLimit = IC.laneWidth / 2 + 0.3;             // long items may overhang the lane edge a little
+  const newS = g + IC.chunkLength - 1.1;             // everything before this is final once this chunk is done
+  const reachTo = g + IC.chunkLength + 1.1;          // the farthest an item placed in this chunk can matter
+  const fresh = [];
+  for (let k = 0; k < count; k++) {
+    const ti = pickInsanityTemplate(), fp = FP[ti];       // pick the object first, then look for room for it
+    for (let attempt = 0; attempt < 14; attempt++) {
+      const s = g + Math.random() * IC.chunkLength;
+      const yaw = fp.spin ? Math.random() * Math.PI * 2 : (Math.random() - 0.5) * 0.8;   // sticks etc. point any direction
+      // choose x so the whole item stays within the lane (plus a small overhang)
+      const c0 = worldCaps(fp.caps, 0, s, yaw);
+      let mn = 9, mx = -9;
+      c0.forEach(c => { mn = Math.min(mn, c.ax - c.r, c.bx - c.r); mx = Math.max(mx, c.ax + c.r, c.bx + c.r); });
+      const lo = Math.max(-IC.laneWidth / 2, -xLimit - mn), hi = Math.min(IC.laneWidth / 2, xLimit - mx);
+      if (lo > hi) continue;
+      const x = lo + Math.random() * (hi - lo);
+      const caps = worldCaps(fp.caps, x, s, yaw);
+      let ok = true;
+      for (const o of IN.items) {                                                        // keep a gap around every neighbour
+        if (Math.hypot(o.x - x, o.s - s) > o.br + fp.br + gap) continue;
+        for (const a of o.caps) { for (const b of caps) { if (capDist(a, b) < gap) { ok = false; break; } } if (!ok) break; }
+        if (!ok) break;
+      }
+      if (!ok) continue;
+      const item = { x, s, br: fp.br, caps };
+      IN.items.push(item);
+      fresh.push({ item, ti, yaw });
+      break;
     }
-    if (!ok) continue;
-    IN.items.push({ x, s, r }); placed++;
-    const obj = spawnObject(ti, x, -CONFIG.spawnDistance + (IN.travel - s));
-    obj.rotation.y = (Math.random() - 0.5) * 0.8;
   }
+  // never wall off the lane: if no route remains, drop the newest items until one does
+  let mid = null;
+  for (;;) {
+    mid = propagateRoute(IN.front.reach, IN.front.s, newS);
+    const ok = mid && propagateRoute(mid, newS, reachTo);
+    if (ok || !fresh.length) break;
+    const drop = fresh.pop();
+    IN.items.splice(IN.items.indexOf(drop.item), 1);
+  }
+  fresh.forEach(f => {
+    const obj = spawnObject(f.ti, f.item.x, -CONFIG.spawnDistance + (IN.travel - f.item.s));
+    obj.rotation.y = f.yaw;
+  });
+  IN.front = { s: newS, reach: mid || [[-IC.laneWidth / 2, IC.laneWidth / 2]] };
 }
+
 function updateInsanity(dt) {
   const speed = speedFor(state.levelIN);
   IN.travel += speed * dt;

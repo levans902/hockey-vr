@@ -49,10 +49,11 @@ Opposing defencemen skate around you in the zone in front of and beside you, nev
 
 ### Insanity
 
-One lane, as wide as three treadmill lanes (1.65 m), packed with the same objects. Instead of switching lanes, you have to work through the clutter with toe drags and fancy handles.
+One lane, as wide as three treadmill lanes (1.65 m), packed with objects of every size. Instead of switching lanes, you have to work through the clutter with toe drags and fancy handles.
 
-- **Density 1 to 10:** density 1 is a sparse scatter with wide gaps. Density 10 is about four objects per metre of lane with only about 20 cm between neighbours.
-- **Always passable:** a hidden open path winds slowly through the clutter, so there is always a way through, even at density 10.
+- **Big and odd shapes:** besides the six treadmill objects, Insanity adds hockey sticks lying flat at any angle, a goalie stick, a crossed pair of sticks, an equipment bag, a goalie pad, a bucket of pucks and a helmet. The long ones block whole strips of the lane, so the gaps vary a lot in size and shape.
+- **Density 1 to 10:** density 1 is a sparse scatter with wide gaps. At density 10 neighbouring objects are only about 20 cm apart.
+- **Always passable:** every new object is checked so that a route through the lane still exists. It can twist and turn, and at the highest densities it is tight.
 - **Speed:** levels 1 to 10, the same speeds as the treadmill.
 
 ## Objects
@@ -66,7 +67,17 @@ Each object is built from Three.js shapes, so there are no external assets.
 - **Hockey gloves:** a pair lying flat on the floor
 - **Mini net:** a red-framed net with translucent netting
 
-Both the Treadmill and Insanity use all six. Keep Away uses full-size defencemen in red jerseys instead.
+The Treadmill uses all six. Insanity uses these six plus eight bigger, oddly shaped ones:
+
+- **Hockey stick** (two sizes): lying flat, pointing in any direction
+- **Goalie stick:** long shaft with a wide paddle
+- **Crossed sticks:** two sticks lying across each other
+- **Equipment bag:** a big duffel
+- **Goalie leg pad:** long and flat
+- **Bucket of pucks**
+- **Helmet**
+
+Keep Away uses full-size defencemen in red jerseys instead.
 
 ## Control panel
 
@@ -140,7 +151,7 @@ Everything adjustable is in the `CONFIG` object near the top of the script in `i
 | `startLevel`, `startLanes`, `startDifficulty` | Defaults on first launch. |
 | `hardIntervalJitter`, `hardDepthJitter` | How irregular Hard feels. |
 | `proExtra`, `proIntervalJitter`, `proMinDepthGap`, `proShiftTime`, `proMaxSafeHold`, `proMaxEmpty` | Treadmill Pro density and fairness. A smaller `proShiftTime` is harder. |
-| `insanity.targetMax`, `gapMin`, `pathSlope` | Insanity: objects at density 10, tightest gap, and how quickly the open path wanders. |
+| `insanity.gapMax`, `gapMin`, `pathClear`, `pathSlope` | Insanity: clear space between objects at density 1 and 10, the room the route through the clutter must leave for your puck, and how sharply that route may turn. |
 | `keepAway.defenderScale` | How big the defenders look (1.0 is full size). |
 | `keepAway.puckOffset` | Where the game assumes your puck is in front of you. |
 | `keepAway.maxRadius`, `attackGap`, `perDifficulty` | Zone size, spacing between attacks, and each difficulty's defender count and aggression. |
