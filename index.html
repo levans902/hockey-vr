@@ -29,7 +29,7 @@
 <body>
 <div id="ui">
   <h1>🏒 SickMitts VR</h1>
-  <p>Clear your floor, put on your Quest 3, and tap below. Pick a game on the floating panel: <b>Endless Object Treadmill</b> sends water bottles, pylons, dynamite, skates, gloves and mini nets sliding at your feet, and <b>Keep Away</b> puts opposing defencemen on the ice around you, skating, circling and attacking your puck. Point a controller (or pinch with your hand) at the panel to choose lanes, difficulty and speed, then start.</p>
+  <p>Clear your floor, put on your Quest 3, and tap below. Use the arrows on the floating panel to pick a game: <b>Endless Object Treadmill</b> sends objects down several lanes, <b>Keep Away</b> puts opposing defencemen on the ice around you, and <b>Insanity</b> fills one wide lane with clutter that needs toe drags and fancy hands. Point a controller (or pinch with your hand) at the panel to adjust the settings, then start.</p>
   <button id="enter" disabled>Checking MR support…</button>
   <div id="msg"></div>
   <div id="build" style="color:#5f7391;font-size:.8rem"></div>
@@ -38,7 +38,7 @@
 <script type="module">
 import * as THREE from 'three';
 
-const BUILD = 'keepaway-1';   // shown on the start screen and panel so you can tell which copy is loaded
+const BUILD = 'insanity-1';   // shown on the start screen and panel so you can tell which copy is loaded
 document.getElementById('build').textContent = 'build ' + BUILD;
 
 /* ============================== CONFIG ============================== */
@@ -70,6 +70,15 @@ const CONFIG = {
   proMaxSafeHold: 1.2,         // seconds the open lane may stay put before it MUST move
   proStarve: 2.0,              // a lane empty longer than this can't become the open lane
   proMaxEmpty: 2.6,            // seconds: any lane empty this long gets the next object
+  insanity: {
+    laneWidth: 1.65,           // metres: ONE lane as wide as the treadmill's 3 lanes (3 x laneSpacing)
+    chunkLength: 0.8,          // metres of clutter generated at a time
+    targetMin: 0.7, targetMax: 5.0,   // objects per metre of lane at density 1 / density 10
+    gapMax: 0.95, gapMin: 0.2,        // clear floor between neighbouring objects at density 1 / 10
+    pathSlope: 0.4,            // how fast the guaranteed open path may wander sideways
+    pathMinHalf: 0.14,         // half-width (m) of the guaranteed open path through the clutter
+    startDensity: 4, startLevel: 2
+  },
   keepAway: {
     defenderScale: 1.0,        // 1.0 = roughly full-size defenceman (about 1.8 m tall)
     orbitSpeedBase: 0.5,       // m/s skating around at level 0
@@ -105,6 +114,8 @@ const state = {
   difficulty: CONFIG.startDifficulty,
   game: 'treadmill',           // treadmill | keepaway
   levelKA: 2,                  // Keep Away speed level
+  levelIN: CONFIG.insanity.startLevel,   // Insanity speed level
+  density: CONFIG.insanity.startDensity, // Insanity clutter level 1-10
   attacks: 0,
   elapsed: 0,
   passed: 0,
@@ -133,8 +144,15 @@ const KC = CONFIG.keepAway;
 const kaDiff = () => KC.perDifficulty[state.difficulty];
 const orbitSpeedFor = l => KC.orbitSpeedBase + l * KC.orbitSpeedStep;
 const attackSpeedFor = l => KC.attackSpeedBase + l * KC.attackSpeedStep;
-const curLevel = () => (state.game === 'keepaway' ? state.levelKA : state.level);
-const shownSpeed = () => (state.game === 'keepaway' ? attackSpeedFor(state.levelKA) : speedFor(state.level));
+const GAMES = [
+  { id: 'treadmill', name: 'ENDLESS OBJECT TREADMILL' },
+  { id: 'keepaway',  name: 'KEEP AWAY' },
+  { id: 'insanity',  name: 'INSANITY' }
+];
+const IC = CONFIG.insanity;
+const curLevel = () => (state.game === 'keepaway' ? state.levelKA : state.game === 'insanity' ? state.levelIN : state.level);
+const shownSpeed = () => (state.game === 'keepaway' ? attackSpeedFor(state.levelKA)
+  : speedFor(state.game === 'insanity' ? state.levelIN : state.level));
 
 /* ---------- remember settings between sessions ---------- */
 const SAVE_KEY = 'stickMR.v2';
@@ -145,14 +163,16 @@ const SAVE_KEY = 'stickMR.v2';
     if (CONFIG.difficulties.includes(s.difficulty)) state.difficulty = s.difficulty;
     if (Number.isInteger(s.level)) state.level = clamp(s.level, CONFIG.minLevel, CONFIG.maxLevel);
     if (Number.isInteger(s.levelKA)) state.levelKA = clamp(s.levelKA, CONFIG.minLevel, CONFIG.maxLevel);
-    if (s.game === 'treadmill' || s.game === 'keepaway') state.game = s.game;
+    if (Number.isInteger(s.levelIN)) state.levelIN = clamp(s.levelIN, CONFIG.minLevel, CONFIG.maxLevel);
+    if (Number.isInteger(s.density)) state.density = clamp(s.density, 1, 10);
+    if (GAMES.some(g => g.id === s.game)) state.game = s.game;
   } catch (e) {}
   resetPro();
 })();
 function saveSettings() {
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(
     { lanes: state.lanes, difficulty: state.difficulty, level: state.level,
-      levelKA: state.levelKA, game: state.game })); } catch (e) {}
+      levelKA: state.levelKA, levelIN: state.levelIN, density: state.density, game: state.game })); } catch (e) {}
 }
 
 /* ============================== THREE SETUP ============================== */
@@ -190,6 +210,13 @@ function rebuildLanes() {
     c.geometry.dispose();
   }
   const len = CONFIG.spawnDistance + CONFIG.despawnZ;
+  if (state.game === 'insanity') {                 // one wide lane
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(IC.laneWidth, len), guideMat);
+    m.rotation.x = -Math.PI / 2;
+    m.position.set(0, 0.002, -(CONFIG.spawnDistance - CONFIG.despawnZ) / 2);
+    laneGroup.add(m);
+    return;
+  }
   for (let i = 0; i < state.lanes; i++) {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(CONFIG.laneGuideWidth, len), guideMat);
     m.rotation.x = -Math.PI / 2;
@@ -210,7 +237,8 @@ const kaRing = new THREE.Mesh(new THREE.RingGeometry(KC.maxRadius, KC.maxRadius 
 kaRing.rotation.x = -Math.PI / 2; kaRing.position.y = 0.003;
 world.add(kaRing);
 function applyGameVisuals() {
-  laneGroup.visible = state.game === 'treadmill';
+  rebuildLanes();                                   // N lanes, or one wide lane for Insanity
+  laneGroup.visible = state.game !== 'keepaway';
   kaRing.visible = state.game === 'keepaway';
 }
 applyGameVisuals();
@@ -382,13 +410,17 @@ const templates = [makeWaterBottle, makePylon, makeDynamite, makeSkates, makeGlo
 /* ============================== OBSTACLE MANAGEMENT ============================== */
 const obstacles = [];
 
-function spawnAt(lane, zJitter = 0) {
-  const obj = templates[Math.floor(Math.random() * templates.length)].clone();
-  obj.position.set(laneX(lane), 0, -CONFIG.spawnDistance + zJitter);
+function spawnObject(ti, x, z) {
+  const obj = templates[ti].clone();
+  obj.position.set(x, 0, z);
   obj.userData.age = 0;
   obj.scale.setScalar(0.01);
   world.add(obj);
   obstacles.push(obj);
+  return obj;
+}
+function spawnAt(lane, zJitter = 0) {
+  return spawnObject(Math.floor(Math.random() * templates.length), laneX(lane), -CONFIG.spawnDistance + zJitter);
 }
 function clearObstacles() {
   obstacles.forEach(o => world.remove(o));
@@ -719,15 +751,7 @@ function updateKeepAway(dt) {
   });
 }
 
-function updateTreadmill(dt) {
-  const speed = speedFor(state.level);
-
-  state.spawnTimer += dt;
-  if (state.spawnTimer >= state.nextInterval) {
-    state.spawnTimer = 0;
-    spawnRow();
-  }
-
+function moveObstacles(speed, dt) {
   for (let i = obstacles.length - 1; i >= 0; i--) {
     const o = obstacles[i];
     o.position.z += speed * dt;                 // slide along the floor toward the player's feet
@@ -737,6 +761,87 @@ function updateTreadmill(dt) {
       world.remove(o); obstacles.splice(i, 1); state.passed++;
     }
   }
+}
+
+function updateTreadmill(dt) {
+  const speed = speedFor(state.level);
+  state.spawnTimer += dt;
+  if (state.spawnTimer >= state.nextInterval) {
+    state.spawnTimer = 0;
+    spawnRow();
+  }
+  moveObstacles(speed, dt);
+}
+
+/* ============================== INSANITY ============================== */
+/* One wide lane (as wide as the treadmill's 3 lanes) packed with the same objects.
+   Objects are scattered at random with a minimum clear gap between neighbours; the gap shrinks and the
+   count grows with the density level. A hidden, gently wandering open path is always kept clear, so even
+   at density 10 there is always a way through, but it needs toe drags and tight hands to follow it. */
+const IN = { items: [], path: [], nextChunk: 0, travel: 0 };
+const IN_R = [0.12, 0.19, 0.10, 0.22, 0.24, 0.27];     // footprint radius of each object (bottle, pylon, dynamite, skates, gloves, net)
+const lerp = (a, b, t) => a + (b - a) * t;
+
+function insanityParams() {
+  const t = (state.density - 1) / 9;
+  return { target: lerp(IC.targetMin, IC.targetMax, t), gap: lerp(IC.gapMax, IC.gapMin, t) };
+}
+function resetInsanity() {
+  IN.items = []; IN.travel = 0; IN.nextChunk = 0;
+  IN.path = [{ s: 0, x: (Math.random() * 2 - 1) * 0.4 }];
+}
+function extendPath(sEnd) {
+  const half = IC.laneWidth / 2 - 0.25;
+  while (IN.path[IN.path.length - 1].s < sEnd) {
+    const last = IN.path[IN.path.length - 1];
+    const step = (Math.random() * 2 - 1) * IC.pathSlope * IC.chunkLength;
+    IN.path.push({ s: last.s + IC.chunkLength, x: clamp(last.x + step, -half, half) });
+  }
+  while (IN.path.length > 8 && IN.path[1].s < IN.travel - 6) IN.path.shift();
+}
+function distToPath(x, s) {
+  let best = 99;
+  for (let i = 0; i + 1 < IN.path.length; i++) {
+    const a = IN.path[i], b = IN.path[i + 1];
+    if (b.s < s - 1.5 || a.s > s + 1.5) continue;
+    const vx = b.x - a.x, vs = b.s - a.s, wx = x - a.x, ws = s - a.s;
+    const t = clamp((wx * vx + ws * vs) / (vx * vx + vs * vs), 0, 1);
+    best = Math.min(best, Math.hypot(wx - vx * t, ws - vs * t));
+  }
+  return best;
+}
+function generateInsanityChunk(g) {
+  const { target, gap } = insanityParams();
+  extendPath(g + IC.chunkLength * 3);
+  const half = Math.max(IC.pathMinHalf, gap / 2);
+  const count = Math.round(target * IC.chunkLength * (0.7 + Math.random() * 0.6));
+  let placed = 0, tries = 0;
+  while (placed < count && tries < 300) {
+    tries++;
+    const ti = Math.floor(Math.random() * templates.length), r = IN_R[ti];
+    const x = (Math.random() - 0.5) * IC.laneWidth;
+    const s = g + Math.random() * IC.chunkLength;
+    if (distToPath(x, s) < (r + half) * 1.1) continue;            // keep the open path clear
+    let ok = true;
+    for (const o of IN.items) {                                    // keep a gap around every neighbour
+      const need = o.r + r + gap;
+      if ((o.x - x) * (o.x - x) + (o.s - s) * (o.s - s) < need * need) { ok = false; break; }
+    }
+    if (!ok) continue;
+    IN.items.push({ x, s, r }); placed++;
+    const obj = spawnObject(ti, x, -CONFIG.spawnDistance + (IN.travel - s));
+    obj.rotation.y = (Math.random() - 0.5) * 0.8;
+  }
+}
+function updateInsanity(dt) {
+  const speed = speedFor(state.levelIN);
+  IN.travel += speed * dt;
+  while (IN.travel >= IN.nextChunk) {
+    generateInsanityChunk(IN.nextChunk);
+    IN.nextChunk += IC.chunkLength;
+  }
+  IN.items = IN.items.filter(o => o.s > IN.travel - 8);
+  moveObstacles(speed, dt);
 }
 
 /* ============================== UI PANEL ============================== */
@@ -754,17 +859,21 @@ const panel = new THREE.Mesh(
 world.add(panel);
 
 const treadmillOnly = () => state.game === 'treadmill';
+const insanityOnly = () => state.game === 'insanity';
+const hasDifficulty = () => state.game !== 'insanity';
 const buttons = [
-  { id: 'game:treadmill', x: 40,  y: 62,  w: 470, h: 62, label: 'ENDLESS OBJECT TREADMILL', sel: () => state.game === 'treadmill' },
-  { id: 'game:keepaway',  x: 514, y: 62,  w: 470, h: 62, label: 'KEEP AWAY',               sel: () => state.game === 'keepaway' },
+  { id: 'gameprev', x: 40,  y: 62,  w: 120, h: 62, label: '◀' },
+  { id: 'gamenext', x: 864, y: 62,  w: 120, h: 62, label: '▶' },
   { id: 'slower',   x: 40,  y: 262, w: 200, h: 96, label: '−  SPEED' },
   { id: 'toggle',   x: 262, y: 262, w: 500, h: 96, label: '' },
   { id: 'faster',   x: 784, y: 262, w: 200, h: 96, label: 'SPEED  +' },
   ...CONFIG.laneOptions.map((n, i) => ({ id: 'lanes' + n, x: 215 + i * 194, y: 372, w: 184, h: 66,
       label: n + ' LANES', sel: () => state.lanes === n, show: treadmillOnly })),
+  { id: 'densdown', x: 215, y: 372, w: 120, h: 66, label: '−', show: insanityOnly },
+  { id: 'densup',   x: 864, y: 372, w: 120, h: 66, label: '+', show: insanityOnly },
   ...CONFIG.difficulties.map((d, i) => ({ id: 'diff' + d, x: 215 + i * 194, y: 454, w: 184, h: 66,
       label: () => state.game === 'keepaway' ? d.toUpperCase() + ' (' + KC.perDifficulty[d].count + ')' : d.toUpperCase(),
-      sel: () => state.difficulty === d })),
+      sel: () => state.difficulty === d, show: hasDifficulty })),
   { id: 'reset',    x: 40,  y: 540, w: 300, h: 80,  label: 'RESET' },
   { id: 'recenter', x: 684, y: 540, w: 300, h: 80,  label: 'RECENTER' }
 ];
@@ -785,7 +894,7 @@ const fmtTime = t => {
 
 let lastTimerText = '';
 function drawPanel() {
-  const ka = state.game === 'keepaway';
+  const ka = state.game === 'keepaway', ins = state.game === 'insanity';
   ctx.clearRect(0, 0, CW, CH);
   ctx.fillStyle = 'rgba(10,18,34,0.9)';
   rr(0, 0, CW, CH, 36); ctx.fill();
@@ -796,12 +905,23 @@ function drawPanel() {
   ctx.fillStyle = '#9fb3d1'; ctx.font = '600 28px system-ui, sans-serif';
   ctx.fillText('SICKMITTS VR', CW / 2, 32);
 
+  // game selector: current game name between the arrow buttons
+  const gi = Math.max(0, GAMES.findIndex(g => g.id === state.game));
+  ctx.fillStyle = '#1a2740'; rr(172, 62, 680, 62, 20); ctx.fill();
+  ctx.strokeStyle = '#4cc9f0'; ctx.lineWidth = 3; rr(172, 62, 680, 62, 20); ctx.stroke();
+  ctx.fillStyle = '#ffffff'; ctx.font = '800 32px system-ui, sans-serif';
+  ctx.fillText(GAMES[gi].name, CW / 2, 94);
+  ctx.fillStyle = '#5f7391'; ctx.font = '600 18px system-ui, sans-serif';
+  ctx.textAlign = 'left'; ctx.fillText('GAME ' + (gi + 1) + '/' + GAMES.length, 188, 76); ctx.textAlign = 'center';
+
   ctx.fillStyle = '#ffffff'; ctx.font = '700 98px ui-monospace, Menlo, Consolas, monospace';
   ctx.fillText(fmtTime(state.elapsed), CW / 2, 175);
 
   ctx.fillStyle = '#ffd166'; ctx.font = '600 34px system-ui, sans-serif';
-  ctx.fillText('Level ' + curLevel() + '  ·  ' + shownSpeed().toFixed(1) + ' m/s  ·  ' +
-    (ka ? 'Attacks ' + state.attacks : 'Passed ' + state.passed), CW / 2, 236);
+  const extra = ka ? 'Attacks ' + state.attacks
+    : ins ? 'Density ' + state.density + '  ·  Passed ' + state.passed
+    : 'Passed ' + state.passed;
+  ctx.fillText('Level ' + curLevel() + '  ·  ' + shownSpeed().toFixed(1) + ' m/s  ·  ' + extra, CW / 2, 236);
 
   ctx.fillStyle = '#5f7391'; ctx.font = '500 20px system-ui, sans-serif';
   ctx.fillText('build ' + BUILD, CW / 2, 676);
@@ -814,13 +934,29 @@ function drawPanel() {
     const n = kaDiff().count;
     ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.font = '700 30px system-ui, sans-serif';
     ctx.fillText(n + (n === 1 ? ' DEFENDER' : ' DEFENDERS') + '  ·  set by difficulty', 215 + 769 / 2, 407);
-    ctx.textAlign = 'left'; ctx.fillStyle = '#9fb3d1';
+  } else if (ins) {
+    ctx.font = '700 25px system-ui, sans-serif';
+    ctx.fillText('DENSITY', 40, 405);
+    ctx.fillStyle = '#1a2740'; rr(347, 372, 505, 66, 20); ctx.fill();
+    ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.font = '700 28px system-ui, sans-serif';
+    ctx.fillText('DENSITY  ' + state.density + ' / 10', 347 + 505 / 2, 394);
+    for (let i = 0; i < 10; i++) {                       // level bar
+      ctx.fillStyle = i < state.density ? '#4cc9f0' : '#2c3b58';
+      ctx.fillRect(372 + i * 46, 417, 40, 9);
+    }
+    ctx.textAlign = 'left'; ctx.fillStyle = '#9fb3d1'; ctx.font = '700 25px system-ui, sans-serif';
+    ctx.fillText('LANE', 40, 487);
+    ctx.fillStyle = '#1a2740'; rr(215, 454, 769, 66, 20); ctx.fill();
+    ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.font = '700 26px system-ui, sans-serif';
+    ctx.fillText('ONE WIDE LANE  ·  CLUTTERED  ·  USE YOUR HANDS', 215 + 769 / 2, 489);
   } else {
     ctx.font = '700 28px system-ui, sans-serif';
     ctx.fillText('LANES', 40, 405);
   }
-  ctx.font = '700 25px system-ui, sans-serif';
-  ctx.fillText('DIFFICULTY', 40, 487);
+  if (!ins) {
+    ctx.textAlign = 'left'; ctx.fillStyle = '#9fb3d1'; ctx.font = '700 25px system-ui, sans-serif';
+    ctx.fillText('DIFFICULTY', 40, 487);
+  }
   ctx.textAlign = 'center';
 
   buttons.forEach(b => {
@@ -836,11 +972,14 @@ function drawPanel() {
     if (sel) base = '#1d6fa5';
     if (b.id === 'slower' && curLevel() <= CONFIG.minLevel) base = '#1a2236';
     if (b.id === 'faster' && curLevel() >= CONFIG.maxLevel) base = '#1a2236';
+    if (b.id === 'densdown' && state.density <= 1) base = '#1a2236';
+    if (b.id === 'densup' && state.density >= 10) base = '#1a2236';
     ctx.fillStyle = hov ? '#4cc9f0' : base;
     rr(b.x, b.y, b.w, b.h, 20); ctx.fill();
     if (sel && !hov) { ctx.strokeStyle = '#4cc9f0'; ctx.lineWidth = 4; rr(b.x, b.y, b.w, b.h, 20); ctx.stroke(); }
     ctx.fillStyle = hov ? '#0b1220' : '#ffffff';
-    const fs = b.id === 'toggle' ? 62 : b.id.startsWith('game:') ? 28 : label.length > 9 ? 26 : b.h <= 70 ? 30 : 32;
+    const fs = b.id === 'toggle' ? 62 : b.id.startsWith('game') ? 34 : b.id.startsWith('dens') ? 44
+      : label.length > 9 ? 26 : b.h <= 70 ? 30 : 32;
     ctx.font = (b.id === 'toggle' ? '800 ' : '700 ') + fs + 'px system-ui, sans-serif';
     ctx.fillText(label, b.x + b.w / 2, b.y + b.h / 2 + 2);
   });
@@ -854,6 +993,7 @@ function resetRun() {
   resetPro();
   clearObstacles();
   clearDefenders();
+  resetInsanity();
   lastTimerText = '';
 }
 
@@ -866,8 +1006,9 @@ function setGame(g) {
 }
 
 function pressButton(id) {
-  if (id.startsWith('game:')) {
-    setGame(id.slice(5));
+  if (id === 'gameprev' || id === 'gamenext') {          // cycle through the game modes
+    const gi = GAMES.findIndex(g => g.id === state.game);
+    setGame(GAMES[(gi + (id === 'gamenext' ? 1 : GAMES.length - 1)) % GAMES.length].id);
   } else if (id.startsWith('lanes')) {
     const n = parseInt(id.slice(5), 10);
     if (n !== state.lanes) {
@@ -893,10 +1034,16 @@ function pressButton(id) {
       case 'faster': {
         const delta = id === 'faster' ? 1 : -1;
         if (state.game === 'keepaway') state.levelKA = clamp(state.levelKA + delta, CONFIG.minLevel, CONFIG.maxLevel);
+        else if (state.game === 'insanity') state.levelIN = clamp(state.levelIN + delta, CONFIG.minLevel, CONFIG.maxLevel);
         else state.level = clamp(state.level + delta, CONFIG.minLevel, CONFIG.maxLevel);
         saveSettings();
         break;
       }
+      case 'densdown':
+      case 'densup':
+        state.density = clamp(state.density + (id === 'densup' ? 1 : -1), 1, 10);
+        saveSettings();
+        break;
       case 'reset': resetRun(); break;
       case 'recenter': state.needsPlace = true; break;
     }
@@ -973,7 +1120,9 @@ renderer.setAnimationLoop(() => {
 
   if (state.mode === 'running') {
     state.elapsed += dt;
-    if (state.game === 'treadmill') updateTreadmill(dt); else updateKeepAway(dt);
+    if (state.game === 'treadmill') updateTreadmill(dt);
+    else if (state.game === 'keepaway') updateKeepAway(dt);
+    else updateInsanity(dt);
 
     const t = fmtTime(state.elapsed) + '|' + state.passed + '|' + state.attacks;
     if (t !== lastTimerText) { lastTimerText = t; drawPanel(); }
