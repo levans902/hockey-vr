@@ -29,7 +29,7 @@
 <body>
 <div id="ui">
   <h1>🏒 SickMitts VR</h1>
-  <p>Clear your floor, put on your Quest 3, and tap below. Use the arrows on the floating panel to pick a game: <b>Endless Object Treadmill</b> sends objects down several lanes, <b>Keep Away</b> puts opposing defencemen on the ice around you, and <b>Insanity</b> fills one wide lane with clutter that needs toe drags and fancy hands. Point a controller (or pinch with your hand) at the panel to adjust the settings, then start.</p>
+  <p>Clear your floor, put on your Quest 3, and tap below. Use the arrows on the floating panel to pick a game: <b>Endless Object Treadmill</b> sends objects down several lanes, <b>Keep Away</b> puts opposing defencemen on the ice around you, <b>Insanity</b> fills one wide lane with clutter that needs toe drags and fancy hands, and <b>Heads Up!</b> sends a wiggling zig-zag training aid down the lane while a French bulldog fires cannonballs at your head, so you have to duck while you stickhandle. Point a controller (or pinch with your hand) at the panel to adjust the settings, then start.</p>
   <button id="enter" disabled>Checking MR support…</button>
   <div id="msg"></div>
   <div id="build" style="color:#5f7391;font-size:.8rem"></div>
@@ -38,7 +38,7 @@
 <script type="module">
 import * as THREE from 'three';
 
-const BUILD = 'insanity-7';   // shown on the start screen and panel so you can tell which copy is loaded
+const BUILD = 'headsup-1';   // shown on the start screen and panel so you can tell which copy is loaded
 document.getElementById('build').textContent = 'build ' + BUILD;
 
 /* ============================== CONFIG ============================== */
@@ -75,9 +75,39 @@ const CONFIG = {
     chunkLength: 0.8,          // metres of clutter generated at a time
     targetMin: 0.7, targetMax: 5.0,   // objects per metre of lane at density 1 / density 10
     gapMax: 0.95, gapMin: 0.2,        // clear floor between neighbouring objects at density 1 / 10
-    pathSlope: 0.4,            // how sharply (sideways m per forward m) a route through the clutter may turn
-    pathClear: 0.07,           // room (m) your puck needs either side of the route (puck radius is about 0.04)
+    pathSlope: 0.4,            // how fast the guaranteed open path may wander sideways
+    pathMinHalf: 0.14,         // half-width (m) of the guaranteed open path through the clutter
     startDensity: 4, startLevel: 2
+  },
+  headsUp: {
+    laneWidth: 1.5,            // metres: floor guide for the training aid
+    aidSpacing: 0.75,          // metres between neighbouring pods along the lane
+    aidAmplitude: 0.45,        // how far each pod swings left/right at full zig-zag (0 = dead straight)
+    aidPeriod: 16,             // seconds for the zig-zag to breathe from sharp to straight and back
+    aidPhasePerPod: 0.15,      // phase lag between neighbouring pods (radians): makes the shape ripple
+    aidMinZ: 0.8,              // nearest pod laid out when the mode loads (metres in front of you)
+    aidSpawnOffset: 0.7,       // pods appear this many metres in front of the dog
+    podRadius: 0.095, podHeight: 0.13, rodRadius: 0.014, rodHeight: 0.095,
+    dogDistance: 4.6,          // metres in front of you
+    dogScale: 2.2,             // 1.0 = real Frenchie (about 0.3 m tall); bigger so it reads from 4+ m away
+    dogRangeX: 0.8,            // it wanders +/- this far sideways
+    dogRangeZ: 0.25,           // and this far toward / away from you
+    dogSpeed: 0.5,             // m/s
+    ballRadius: 0.11,
+    ballSpeedBase: 2.8,        // cannonball speed (m/s) at speed level 0
+    ballSpeedStep: 0.3,        // extra m/s per speed level
+    arcHeight: 0.45,           // how much the shot bulges above a straight line (m)
+    hitRadius: 0.27,           // ball centre this close to the headset = hit. Duck about 30 cm (or sidestep) to avoid it
+    aimNoise: 0.06,            // random sideways error on each shot (m)
+    telegraphBase: 0.8, telegraphPerLevel: 0.035, telegraphMin: 0.45,   // bark + fuse warning before a shot (s)
+    burstTelegraph: 0.3,       // warning before the 2nd / 3rd ball of a burst
+    burstGap: 0.35,            // pause between balls in a burst
+    firstShot: 2.5,            // seconds after START before the first shot
+    intervalMax: 5.0, intervalMin: 1.4,   // average seconds between shots at shot volume 1 / 10
+    burstStartShots: 4, burstChancePerShot: 0.07, burstChanceMax: 0.45,   // chance of 2-3 ball bursts above this volume
+    tintPeak: 0.3, tintFade: 0.9,         // red hit tint: strength (0-1) and seconds to fade
+    sound: true, volume: 0.5,
+    startLevel: 2, startShots: 4
   },
   keepAway: {
     defenderScale: 1.0,        // 1.0 = roughly full-size defenceman (about 1.8 m tall)
@@ -112,10 +142,15 @@ const state = {
   level: CONFIG.startLevel,
   lanes: CONFIG.startLanes,
   difficulty: CONFIG.startDifficulty,
-  game: 'treadmill',           // treadmill | keepaway
+  game: 'treadmill',           // treadmill | keepaway | insanity | headsup
   levelKA: 2,                  // Keep Away speed level
   levelIN: CONFIG.insanity.startLevel,   // Insanity speed level
   density: CONFIG.insanity.startDensity, // Insanity clutter level 1-10
+  levelHU: CONFIG.headsUp.startLevel,    // Heads Up! speed level
+  shots: CONFIG.headsUp.startShots,      // Heads Up! cannon shot volume 1-10
+  hits: 0,                     // Heads Up! cannonballs that hit you
+  dodged: 0,                   // Heads Up! cannonballs you ducked
+  eyeHeight: 1.6,              // standing head height, measured on (re)center
   attacks: 0,
   elapsed: 0,
   passed: 0,
@@ -147,12 +182,15 @@ const attackSpeedFor = l => KC.attackSpeedBase + l * KC.attackSpeedStep;
 const GAMES = [
   { id: 'treadmill', name: 'ENDLESS OBJECT TREADMILL' },
   { id: 'keepaway',  name: 'KEEP AWAY' },
-  { id: 'insanity',  name: 'INSANITY' }
+  { id: 'insanity',  name: 'INSANITY' },
+  { id: 'headsup',   name: 'HEADS UP!' }
 ];
 const IC = CONFIG.insanity;
-const curLevel = () => (state.game === 'keepaway' ? state.levelKA : state.game === 'insanity' ? state.levelIN : state.level);
+const HC = CONFIG.headsUp;
+const curLevel = () => (state.game === 'keepaway' ? state.levelKA : state.game === 'insanity' ? state.levelIN
+  : state.game === 'headsup' ? state.levelHU : state.level);
 const shownSpeed = () => (state.game === 'keepaway' ? attackSpeedFor(state.levelKA)
-  : speedFor(state.game === 'insanity' ? state.levelIN : state.level));
+  : speedFor(state.game === 'insanity' ? state.levelIN : state.game === 'headsup' ? state.levelHU : state.level));
 
 /* ---------- remember settings between sessions ---------- */
 const SAVE_KEY = 'stickMR.v2';
@@ -165,6 +203,8 @@ const SAVE_KEY = 'stickMR.v2';
     if (Number.isInteger(s.levelKA)) state.levelKA = clamp(s.levelKA, CONFIG.minLevel, CONFIG.maxLevel);
     if (Number.isInteger(s.levelIN)) state.levelIN = clamp(s.levelIN, CONFIG.minLevel, CONFIG.maxLevel);
     if (Number.isInteger(s.density)) state.density = clamp(s.density, 1, 10);
+    if (Number.isInteger(s.levelHU)) state.levelHU = clamp(s.levelHU, CONFIG.minLevel, CONFIG.maxLevel);
+    if (Number.isInteger(s.shots)) state.shots = clamp(s.shots, 1, 10);
     if (GAMES.some(g => g.id === s.game)) state.game = s.game;
   } catch (e) {}
   resetPro();
@@ -172,7 +212,8 @@ const SAVE_KEY = 'stickMR.v2';
 function saveSettings() {
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(
     { lanes: state.lanes, difficulty: state.difficulty, level: state.level,
-      levelKA: state.levelKA, levelIN: state.levelIN, density: state.density, game: state.game })); } catch (e) {}
+      levelKA: state.levelKA, levelIN: state.levelIN, density: state.density,
+      levelHU: state.levelHU, shots: state.shots, game: state.game })); } catch (e) {}
 }
 
 /* ============================== THREE SETUP ============================== */
@@ -210,6 +251,14 @@ function rebuildLanes() {
     c.geometry.dispose();
   }
   const len = CONFIG.spawnDistance + CONFIG.despawnZ;
+  if (state.game === 'headsup') {                  // one lane for the training aid, out to the dog
+    const far = HC.dogDistance - 0.4;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(HC.laneWidth, far + CONFIG.despawnZ), guideMat);
+    m.rotation.x = -Math.PI / 2;
+    m.position.set(0, 0.002, -(far - CONFIG.despawnZ) / 2);
+    laneGroup.add(m);
+    return;
+  }
   if (state.game === 'insanity') {                 // one wide lane
     const m = new THREE.Mesh(new THREE.PlaneGeometry(IC.laneWidth, len), guideMat);
     m.rotation.x = -Math.PI / 2;
@@ -399,140 +448,19 @@ function makeMiniNet() {
 
 /* ---------- build templates once, clone per spawn (clones share geometry/materials) ---------- */
 const shadowGeo = new THREE.CircleGeometry(1, 28);
-function wrapTemplate(fn) {
+const templates = [makeWaterBottle, makePylon, makeDynamite, makeSkates, makeGloves, makeMiniNet].map(fn => {
   const { obj, shadow } = fn();
   const s = new THREE.Mesh(shadowGeo, mat.shadow);
-  const [sx, sz] = Array.isArray(shadow) ? shadow : [shadow, shadow];
-  s.rotation.x = -Math.PI / 2; s.position.y = 0.004; s.scale.set(sx, sz, 1);
+  s.rotation.x = -Math.PI / 2; s.position.y = 0.004; s.scale.setScalar(shadow);
   const root = new THREE.Group(); root.add(obj, s);
   return root;
-}
-/* the six objects used by the Endless Object Treadmill (and Insanity) */
-const templates = [makeWaterBottle, makePylon, makeDynamite, makeSkates, makeGloves, makeMiniNet].map(wrapTemplate);
-
-/* ---------- bigger, oddly shaped objects (Insanity only) ---------- */
-const xm = {
-  stickBlack: mat.black, stickGray: std(0x9aa5b1), tapeW: mat.white, band: mat.redGloss,
-  bagNavy: std(0x1c2b4a, { roughness: 0.8 }), strap: std(0x0e1118),
-  padWhite: std(0xf4f6f8, { roughness: 0.6 }), padBlue: std(0x1d6fa5),
-  bucket: std(0x2a6df4, { roughness: 0.5 }), puck: std(0x0b0c10, { roughness: 0.7 }),
-  helmet: std(0xf1f5f9, { roughness: 0.3 }), helmetDark: std(0x2a2f38)
-};
-
-/* A hockey stick lying flat: shaft along X, blade angled off the end. Overall about 1.5 m. */
-function buildStick(shaftMat, bandMat) {
-  const g = new THREE.Group();
-  g.add(box(1.2, 0.028, 0.026, shaftMat, -0.15, 0.014, 0));          // shaft
-  g.add(box(0.26, 0.03, 0.03, bandMat, -0.62, 0.015, 0));            // grip tape near the butt end
-  const blade = box(0.3, 0.03, 0.07, shaftMat, 0.588, 0.015, 0.058); blade.rotation.y = -0.4; g.add(blade);
-  const tape = box(0.14, 0.032, 0.072, xm.tapeW, 0.615, 0.016, 0.07); tape.rotation.y = -0.4; g.add(tape);
-  return g;
-}
-function makeStick(k, shaftMat, bandMat) {
-  const g = buildStick(shaftMat, bandMat); g.scale.setScalar(k);
-  return { obj: g, shadow: [0.75 * k, 0.1] };
-}
-function makeGoalieStick() {                                          // long shaft + wide paddle
-  const g = new THREE.Group();
-  g.add(box(0.75, 0.03, 0.03, xm.stickBlack, -0.425, 0.015, 0));
-  g.add(box(0.7, 0.036, 0.2, xm.padWhite, 0.3, 0.018, 0));
-  g.add(box(0.7, 0.038, 0.05, xm.band, 0.3, 0.019, 0));
-  g.add(box(0.2, 0.032, 0.032, xm.band, -0.7, 0.016, 0));
-  const blade = box(0.3, 0.036, 0.09, xm.stickBlack, 0.788, 0.018, 0.058); blade.rotation.y = -0.4; g.add(blade);
-  return { obj: g, shadow: [0.8, 0.12] };
-}
-function makeBag() {                                                  // big equipment duffel
-  const g = new THREE.Group();
-  const body = mesh(new THREE.CapsuleGeometry(0.17, 0.5, 6, 16), xm.bagNavy, 0, 0.14, 0);
-  body.rotation.z = Math.PI / 2; body.scale.set(0.82, 1, 1.05); g.add(body);
-  g.add(box(0.7, 0.012, 0.12, xm.band, 0, 0.284, 0));                 // top stripe
-  g.add(box(0.4, 0.14, 0.05, xm.strap, 0, 0.12, 0.19));               // end pocket
-  g.add(tube([-0.15, 0.27, 0], [-0.1, 0.34, 0], 0.012, xm.strap));    // carry handle
-  g.add(tube([-0.1, 0.34, 0], [0.1, 0.34, 0], 0.012, xm.strap));
-  g.add(tube([0.1, 0.34, 0], [0.15, 0.27, 0], 0.012, xm.strap));
-  return { obj: g, shadow: [0.5, 0.25] };
-}
-function makePad() {                                                  // goalie leg pad lying flat
-  const g = new THREE.Group();
-  g.add(box(0.85, 0.09, 0.22, xm.padWhite, 0, 0.045, 0));
-  g.add(box(0.85, 0.092, 0.06, xm.padBlue, 0, 0.046, 0));
-  [-0.28, -0.05, 0.18].forEach(x => g.add(box(0.045, 0.095, 0.225, xm.strap, x, 0.047, 0)));
-  const roll = cyl(0.07, 0.07, 0.22, xm.padWhite, 0.36, 0.09, 0, 16); roll.rotation.x = Math.PI / 2; g.add(roll);
-  return { obj: g, shadow: [0.46, 0.15] };
-}
-function makeBucket() {                                               // bucket of pucks
-  const g = new THREE.Group();
-  g.add(cyl(0.17, 0.14, 0.42, xm.bucket, 0, 0.21, 0, 24));
-  g.add(cyl(0.178, 0.178, 0.03, xm.helmetDark, 0, 0.42, 0, 24));
-  [[0, 0.445, 0, 0], [0.06, 0.47, 0.03, 0.35], [-0.05, 0.5, -0.03, -0.3], [0.0, 0.53, 0.05, 0.2]].forEach(([x, y, z, rz]) => {
-    const pk = cyl(0.038, 0.038, 0.025, xm.puck, x, y, z, 16); pk.rotation.z = rz; g.add(pk);
-  });
-  return { obj: g, shadow: [0.26, 0.26] };
-}
-function makeHelmet() {
-  const g = new THREE.Group();
-  const shell = mesh(new THREE.SphereGeometry(0.15, 20, 14), xm.helmet, 0, 0.13, 0);
-  shell.scale.set(0.95, 0.9, 1.2); g.add(shell);
-  g.add(box(0.2, 0.05, 0.03, xm.helmetDark, 0, 0.14, 0.19));
-  [-1, 1].forEach(sx => g.add(box(0.03, 0.08, 0.12, xm.helmetDark, sx * 0.14, 0.1, 0.02)));
-  return { obj: g, shadow: [0.18, 0.2] };
-}
-function makeCrossedSticks() {                                        // two sticks crossed over each other
-  const g = new THREE.Group();
-  const a = buildStick(xm.stickBlack, xm.band); a.rotation.y = 0.5;
-  const b = buildStick(xm.stickGray, xm.tapeW); b.rotation.y = -0.45; b.position.set(0, 0.035, 0.04);
-  g.add(a, b);
-  return { obj: g, shadow: [0.7, 0.5] };
-}
-const extraTemplates = [
-  () => makeStick(1.0, xm.stickBlack, xm.band), () => makeStick(0.85, xm.stickGray, xm.tapeW),
-  makeGoalieStick, makeBag, makePad, makeBucket, makeHelmet, makeCrossedSticks
-].map(wrapTemplate);
-const allTemplates = templates.concat(extraTemplates);                 // Insanity picks from all 14
-
-/* @FP-BEGIN */
-/* Floor footprints used by Insanity to keep clear gaps. Each footprint is one or more "capsules"
-   (a line segment with a radius) in the object's own X/Z coordinates, so a stick blocks the strip it really covers. */
-const rotCaps = (caps, a, dx = 0, dz = 0) => caps.map(c => {
-  const ca = Math.cos(a), sa = Math.sin(a);
-  return { ax: c.ax * ca + c.az * sa + dx, az: -c.ax * sa + c.az * ca + dz,
-           bx: c.bx * ca + c.bz * sa + dx, bz: -c.bx * sa + c.bz * ca + dz, r: c.r };
 });
-const stickCaps = k => [
-  { ax: -0.75 * k, az: 0, bx: 0.45 * k, bz: 0, r: 0.04 * k },
-  { ax: 0.45 * k, az: 0, bx: 0.726 * k, bz: 0.117 * k, r: 0.05 * k }
-];
-const GOALIE_CAPS = [
-  { ax: -0.8, az: 0, bx: -0.05, bz: 0, r: 0.035 },
-  { ax: -0.05, az: 0, bx: 0.65, bz: 0, r: 0.1 },
-  { ax: 0.65, az: 0, bx: 0.926, bz: 0.117, r: 0.055 }
-];
-const BAG_CAPS = [{ ax: -0.26, az: 0, bx: 0.26, bz: 0, r: 0.2 }];
-const PAD_CAPS = [{ ax: -0.33, az: 0, bx: 0.33, bz: 0, r: 0.12 }];
-const CROSS_CAPS = rotCaps(stickCaps(1), 0.5).concat(rotCaps(stickCaps(1), -0.45, 0, 0.04));
-const circ = r => ({ caps: [{ ax: 0, az: 0, bx: 0, bz: 0, r }], spin: false });
-const lng = caps => ({ caps, spin: true });
-const FP = [                       // same order as allTemplates
-  circ(0.12), circ(0.19), circ(0.10), circ(0.22), circ(0.24), circ(0.27),      // bottle, pylon, dynamite, skates, gloves, net
-  lng(stickCaps(1)), lng(stickCaps(0.85)), lng(GOALIE_CAPS), lng(BAG_CAPS), lng(PAD_CAPS),
-  circ(0.18), circ(0.17), lng(CROSS_CAPS)                                      // bucket, helmet, crossed sticks
-];
-FP.forEach(f => { f.br = Math.max(...f.caps.map(c => Math.max(Math.hypot(c.ax, c.az), Math.hypot(c.bx, c.bz)) + c.r)); });
-/* how often each object is picked in Insanity (the bigger, odder ones are weighted up) */
-const IN_WEIGHTS = [1, 1, 1, 1, 1, 1, 1.6, 1.0, 0.7, 0.8, 0.8, 0.9, 0.8, 0.6];
-const IN_WSUM = IN_WEIGHTS.reduce((a, b) => a + b, 0);
-function pickInsanityTemplate() {
-  let r = Math.random() * IN_WSUM;
-  for (let i = 0; i < IN_WEIGHTS.length; i++) { r -= IN_WEIGHTS[i]; if (r <= 0) return i; }
-  return IN_WEIGHTS.length - 1;
-}
-/* @FP-END */
 
 /* ============================== OBSTACLE MANAGEMENT ============================== */
 const obstacles = [];
 
 function spawnObject(ti, x, z) {
-  const obj = allTemplates[ti].clone();
+  const obj = templates[ti].clone();
   obj.position.set(x, 0, z);
   obj.userData.age = 0;
   obj.scale.setScalar(0.01);
@@ -706,14 +634,14 @@ function makeDefenderModel() {            // model faces +Z, feet on Y = 0
 }
 
 const KA = { list: [], lastAttackStart: -99 };
-const _pl = { x: 0, z: 0 };
+const _pl = { x: 0, y: 1.6, z: 0 };
 const _cp = new THREE.Vector3();
 function playerLocal() {                   // your head position in play-area coordinates
   if (renderer.xr.isPresenting) {
     renderer.xr.getCamera().getWorldPosition(_cp);
     world.worldToLocal(_cp);
-    _pl.x = _cp.x; _pl.z = _cp.z;
-  } else { _pl.x = 0; _pl.z = 0; }
+    _pl.x = _cp.x; _pl.y = _cp.y; _pl.z = _cp.z;
+  } else { _pl.x = 0; _pl.y = 1.6; _pl.z = 0; }
   return _pl;
 }
 
@@ -895,167 +823,65 @@ function updateTreadmill(dt) {
 }
 
 /* ============================== INSANITY ============================== */
-/* One wide lane (as wide as the treadmill's 3 lanes) packed with objects of all sizes: the six treadmill objects
-   plus hockey sticks lying at any angle, a goalie stick, a crossed pair of sticks, an equipment bag, a goalie pad,
-   a bucket of pucks and a helmet. Objects are scattered at random with a minimum clear gap between neighbours; the
-   gap shrinks and the count grows with the density level. Every new object is also checked so that a route
-   through the lane always exists (stay inside the lane, turn no sharper than pathSlope, keep pathClear either side),
-   so even at density 10 there is a way through, but it needs toe drags and tight hands to follow it. */
-const IN = { items: [], front: null, nextChunk: 0, travel: 0 };
+/* One wide lane (as wide as the treadmill's 3 lanes) packed with the same objects.
+   Objects are scattered at random with a minimum clear gap between neighbours; the gap shrinks and the
+   count grows with the density level. A hidden, gently wandering open path is always kept clear, so even
+   at density 10 there is always a way through, but it needs toe drags and tight hands to follow it. */
+const IN = { items: [], path: [], nextChunk: 0, travel: 0 };
+const IN_R = [0.12, 0.19, 0.10, 0.22, 0.24, 0.27];     // footprint radius of each object (bottle, pylon, dynamite, skates, gloves, net)
 const lerp = (a, b, t) => a + (b - a) * t;
 
 function insanityParams() {
   const t = (state.density - 1) / 9;
   return { target: lerp(IC.targetMin, IC.targetMax, t), gap: lerp(IC.gapMax, IC.gapMin, t) };
 }
-const RT = { ds: 0.05, clear: IC.pathClear + 0.015 };  // route check: row spacing along the track, puck clearance (with a safety margin)
 function resetInsanity() {
   IN.items = []; IN.travel = 0; IN.nextChunk = 0;
-  IN.front = { s: -1.1, reach: [[-IC.laneWidth / 2, IC.laneWidth / 2]] };
+  IN.path = [{ s: 0, x: (Math.random() * 2 - 1) * 0.4 }];
 }
-
-/* ---- 2D helpers (x = across the lane, y = distance along the track) ---- */
-function ptSegDist(px, py, ax, ay, bx, by) {
-  const vx = bx - ax, vy = by - ay, l2 = vx * vx + vy * vy;
-  const t = l2 > 1e-9 ? clamp(((px - ax) * vx + (py - ay) * vy) / l2, 0, 1) : 0;
-  return Math.hypot(px - (ax + vx * t), py - (ay + vy * t));
-}
-function capDist(a, b) {                            // gap between two capsules (negative = overlapping)
-  const o = (px, py, qx, qy, rx, ry) => (qx - px) * (ry - py) - (qy - py) * (rx - px);
-  const d1 = o(a.ax, a.ay, a.bx, a.by, b.ax, b.ay), d2 = o(a.ax, a.ay, a.bx, a.by, b.bx, b.by);
-  const d3 = o(b.ax, b.ay, b.bx, b.by, a.ax, a.ay), d4 = o(b.ax, b.ay, b.bx, b.by, a.bx, a.by);
-  let d = 0;
-  if (!(d1 * d2 < 0 && d3 * d4 < 0)) {
-    d = Math.min(ptSegDist(a.ax, a.ay, b.ax, b.ay, b.bx, b.by), ptSegDist(a.bx, a.by, b.ax, b.ay, b.bx, b.by),
-                 ptSegDist(b.ax, b.ay, a.ax, a.ay, a.bx, a.by), ptSegDist(b.bx, b.by, a.ax, a.ay, a.bx, a.by));
+function extendPath(sEnd) {
+  const half = IC.laneWidth / 2 - 0.25;
+  while (IN.path[IN.path.length - 1].s < sEnd) {
+    const last = IN.path[IN.path.length - 1];
+    const step = (Math.random() * 2 - 1) * IC.pathSlope * IC.chunkLength;
+    IN.path.push({ s: last.s + IC.chunkLength, x: clamp(last.x + step, -half, half) });
   }
-  return d - a.r - b.r;
+  while (IN.path.length > 8 && IN.path[1].s < IN.travel - 6) IN.path.shift();
 }
-/* an object's capsules in track coordinates (object rotated by yaw, placed at x and track position s) */
-function worldCaps(caps, x, s, yaw) {
-  const c = Math.cos(yaw), si = Math.sin(yaw);
-  const wx = (lx, lz) => x + lx * c + lz * si;
-  const wy = (lx, lz) => s - (-lx * si + lz * c);   // track distance runs opposite to world Z
-  return caps.map(k => ({ ax: wx(k.ax, k.az), ay: wy(k.ax, k.az), bx: wx(k.bx, k.bz), by: wy(k.bx, k.bz), r: k.r }));
-}
-
-/* ---- route guarantee: can a puck still get through the lane? ----
-   Row by row along the track we find the stretches of open floor across the lane (lane minus every item's
-   keep-clear zone), and spread the "reachable" stretches forward, allowing sideways movement of pathSlope. */
-function blockedSlices(o, y, out) {                  // keep-clear x-intervals of item o at track position y
-  for (const c of o.caps) {
-    const R = c.r + RT.clear;
-    if (y < Math.min(c.ay, c.by) - R || y > Math.max(c.ay, c.by) + R) continue;
-    let lo = Infinity, hi = -Infinity;
-    const disk = (cx, cy) => {
-      const d = Math.abs(y - cy);
-      if (d < R) { const h = Math.sqrt(R * R - d * d); lo = Math.min(lo, cx - h); hi = Math.max(hi, cx + h); }
-    };
-    disk(c.ax, c.ay); disk(c.bx, c.by);
-    const vx = c.bx - c.ax, vy = c.by - c.ay, L = Math.hypot(vx, vy);
-    if (L > 1e-6) {                                   // the straight part of the capsule
-      const nx = -vy / L * R, ny = vx / L * R;
-      const P = [[c.ax + nx, c.ay + ny], [c.bx + nx, c.by + ny], [c.bx - nx, c.by - ny], [c.ax - nx, c.ay - ny]];
-      for (let i = 0; i < 4; i++) {
-        const p = P[i], q = P[(i + 1) % 4];
-        if ((p[1] - y) * (q[1] - y) <= 0 && p[1] !== q[1]) {
-          const x = p[0] + (q[0] - p[0]) * ((y - p[1]) / (q[1] - p[1]));
-          lo = Math.min(lo, x); hi = Math.max(hi, x);
-        }
-      }
-    }
-    if (lo <= hi) out.push([lo, hi]);
+function distToPath(x, s) {
+  let best = 99;
+  for (let i = 0; i + 1 < IN.path.length; i++) {
+    const a = IN.path[i], b = IN.path[i + 1];
+    if (b.s < s - 1.5 || a.s > s + 1.5) continue;
+    const vx = b.x - a.x, vs = b.s - a.s, wx = x - a.x, ws = s - a.s;
+    const t = clamp((wx * vx + ws * vs) / (vx * vx + vs * vs), 0, 1);
+    best = Math.min(best, Math.hypot(wx - vx * t, ws - vs * t));
   }
+  return best;
 }
-function freeSlices(near, y) {                        // open x-intervals across the lane at track position y
-  const half = IC.laneWidth / 2, blocked = [];
-  for (const o of near) if (Math.abs(o.s - y) <= o.br + RT.clear) blockedSlices(o, y, blocked);
-  blocked.sort((p, q) => p[0] - q[0]);
-  const free = [];
-  let cur = -half;
-  for (const [lo, hi] of blocked) {
-    if (hi < -half || lo > half) continue;
-    if (lo > cur + 1e-6) free.push([cur, Math.min(lo, half)]);
-    cur = Math.max(cur, hi);
-    if (cur >= half) break;
-  }
-  if (cur < half - 1e-6) free.push([cur, half]);
-  return free;
-}
-/* spread the reachable stretches forward from track position fromS to toS (null if none remain) */
-function propagateRoute(reach, fromS, toS) {
-  const near = IN.items.filter(o => o.s + o.br + RT.clear > fromS && o.s - o.br - RT.clear < toS);
-  const delta = RT.ds * IC.pathSlope * 0.85;           // a little stricter than pathSlope, for safety
-  let cur = reach;
-  for (let y = fromS + RT.ds; y <= toS + 1e-9; y += RT.ds) {
-    const pieces = [];
-    for (const f of freeSlices(near, y)) {
-      for (const r of cur) {
-        const lo = Math.max(f[0], r[0] - delta), hi = Math.min(f[1], r[1] + delta);
-        if (lo <= hi) pieces.push([lo, hi]);
-      }
-    }
-    if (!pieces.length) return null;
-    pieces.sort((p, q) => p[0] - q[0]);
-    const merged = [pieces[0].slice()];
-    for (let i = 1; i < pieces.length; i++) {
-      const m = merged[merged.length - 1];
-      if (pieces[i][0] <= m[1]) m[1] = Math.max(m[1], pieces[i][1]); else merged.push(pieces[i].slice());
-    }
-    cur = merged;
-  }
-  return cur;
-}
-
 function generateInsanityChunk(g) {
   const { target, gap } = insanityParams();
+  extendPath(g + IC.chunkLength * 3);
+  const half = Math.max(IC.pathMinHalf, gap / 2);
   const count = Math.round(target * IC.chunkLength * (0.7 + Math.random() * 0.6));
-  const xLimit = IC.laneWidth / 2 + 0.3;             // long items may overhang the lane edge a little
-  const newS = g + IC.chunkLength - 1.1;             // everything before this is final once this chunk is done
-  const reachTo = g + IC.chunkLength + 1.1;          // the farthest an item placed in this chunk can matter
-  const fresh = [];
-  for (let k = 0; k < count; k++) {
-    const ti = pickInsanityTemplate(), fp = FP[ti];       // pick the object first, then look for room for it
-    for (let attempt = 0; attempt < 14; attempt++) {
-      const s = g + Math.random() * IC.chunkLength;
-      const yaw = fp.spin ? Math.random() * Math.PI * 2 : (Math.random() - 0.5) * 0.8;   // sticks etc. point any direction
-      // choose x so the whole item stays within the lane (plus a small overhang)
-      const c0 = worldCaps(fp.caps, 0, s, yaw);
-      let mn = 9, mx = -9;
-      c0.forEach(c => { mn = Math.min(mn, c.ax - c.r, c.bx - c.r); mx = Math.max(mx, c.ax + c.r, c.bx + c.r); });
-      const lo = Math.max(-IC.laneWidth / 2, -xLimit - mn), hi = Math.min(IC.laneWidth / 2, xLimit - mx);
-      if (lo > hi) continue;
-      const x = lo + Math.random() * (hi - lo);
-      const caps = worldCaps(fp.caps, x, s, yaw);
-      let ok = true;
-      for (const o of IN.items) {                                                        // keep a gap around every neighbour
-        if (Math.hypot(o.x - x, o.s - s) > o.br + fp.br + gap) continue;
-        for (const a of o.caps) { for (const b of caps) { if (capDist(a, b) < gap) { ok = false; break; } } if (!ok) break; }
-        if (!ok) break;
-      }
-      if (!ok) continue;
-      const item = { x, s, br: fp.br, caps };
-      IN.items.push(item);
-      fresh.push({ item, ti, yaw });
-      break;
+  let placed = 0, tries = 0;
+  while (placed < count && tries < 300) {
+    tries++;
+    const ti = Math.floor(Math.random() * templates.length), r = IN_R[ti];
+    const x = (Math.random() - 0.5) * IC.laneWidth;
+    const s = g + Math.random() * IC.chunkLength;
+    if (distToPath(x, s) < (r + half) * 1.1) continue;            // keep the open path clear
+    let ok = true;
+    for (const o of IN.items) {                                    // keep a gap around every neighbour
+      const need = o.r + r + gap;
+      if ((o.x - x) * (o.x - x) + (o.s - s) * (o.s - s) < need * need) { ok = false; break; }
     }
+    if (!ok) continue;
+    IN.items.push({ x, s, r }); placed++;
+    const obj = spawnObject(ti, x, -CONFIG.spawnDistance + (IN.travel - s));
+    obj.rotation.y = (Math.random() - 0.5) * 0.8;
   }
-  // never wall off the lane: if no route remains, drop the newest items until one does
-  let mid = null;
-  for (;;) {
-    mid = propagateRoute(IN.front.reach, IN.front.s, newS);
-    const ok = mid && propagateRoute(mid, newS, reachTo);
-    if (ok || !fresh.length) break;
-    const drop = fresh.pop();
-    IN.items.splice(IN.items.indexOf(drop.item), 1);
-  }
-  fresh.forEach(f => {
-    const obj = spawnObject(f.ti, f.item.x, -CONFIG.spawnDistance + (IN.travel - f.item.s));
-    obj.rotation.y = f.yaw;
-  });
-  IN.front = { s: newS, reach: mid || [[-IC.laneWidth / 2, IC.laneWidth / 2]] };
 }
-
 function updateInsanity(dt) {
   const speed = speedFor(state.levelIN);
   IN.travel += speed * dt;
@@ -1066,6 +892,445 @@ function updateInsanity(dt) {
   IN.items = IN.items.filter(o => o.s > IN.travel - 8);
   moveObstacles(speed, dt);
 }
+
+/* ============================== HEADS UP! ============================== */
+/* An endless zig-zag stickhandling aid (black pods joined by rods) slides down the middle lane toward you.
+   Its zig-zag slowly breathes between the sharp angle in the product photo and almost straight.
+   A French bulldog with a cannon strapped to its back wanders around at the far end, barks, then fires
+   cannonballs at your head. Duck (or lean) out of the way while you keep stickhandling. A ball that gets
+   within HC.hitRadius of the headset counts as a hit and tints the view red for a moment. */
+const HU = { pods: [], rods: [], balls: [], puffs: [], nextIdx: 0, tint: 0 };
+HU.spawnZ = HC.dogDistance - HC.aidSpawnOffset;           // pods appear this far in front of you
+
+const hm = {
+  rubber: std(0x1a1d23, { roughness: 0.45 }),
+  rim: std(0x2d3139, { roughness: 0.5 }),
+  hole: new THREE.MeshBasicMaterial({ color: 0x000000 }),
+  ball: std(0x1b1e26, { metalness: 0.7, roughness: 0.35 }),
+  fur: std(0xc99d68, { roughness: 0.9 }), furLight: std(0xf0e6d6, { roughness: 0.9 }),
+  mask: std(0x2a2522, { roughness: 0.8 }), nose: std(0x0b0b0c, { roughness: 0.25 }),
+  eyeW: std(0xffffff, { roughness: 0.3 }), pink: std(0xe9a3a6, { roughness: 0.8 }),
+  collar: std(0xd62828, { roughness: 0.6 }), gold: std(0xf2c14e, { metalness: 0.7, roughness: 0.3 }),
+  wood: std(0x7b4a24, { roughness: 0.7 }), barrel: std(0x2b2f36, { metalness: 0.6, roughness: 0.4 })
+};
+
+/* ---------- the training aid ---------- */
+function makePodTemplate() {
+  const g = new THREE.Group(), h = HC.podHeight, r = HC.podRadius;
+  g.add(cyl(r, r, h, hm.rubber, 0, h / 2, 0, 28));
+  const lip = mesh(new THREE.RingGeometry(0.03, 0.04, 20), hm.rim, 0, h + 0.001, 0);
+  lip.rotation.x = -Math.PI / 2; g.add(lip);
+  const hole = mesh(new THREE.CircleGeometry(0.03, 20), hm.hole, 0, h + 0.0015, 0);
+  hole.rotation.x = -Math.PI / 2; g.add(hole);                                   // hole in the top
+  const sLip = mesh(new THREE.RingGeometry(0.02, 0.028, 16), hm.rim, r + 0.001, h * 0.45, 0);
+  sLip.rotation.y = Math.PI / 2; g.add(sLip);
+  const sHole = mesh(new THREE.CircleGeometry(0.02, 16), hm.hole, r + 0.0015, h * 0.45, 0);
+  sHole.rotation.y = Math.PI / 2; g.add(sHole);                                  // hole in the side
+  const s = new THREE.Mesh(shadowGeo, mat.shadow);
+  s.rotation.x = -Math.PI / 2; s.position.y = 0.004; s.scale.setScalar(r * 1.5); g.add(s);
+  return g;
+}
+const podTemplate = makePodTemplate();
+const rodGeo = new THREE.CylinderGeometry(HC.rodRadius, HC.rodRadius, 1, 8);
+
+/* how far left/right pod number idx sits (alternating sides). k breathes between 1 (full zig-zag) and 0 (straight),
+   with a small lag per pod so the shape ripples instead of moving as one block. */
+function podX(idx) {
+  const t = state.elapsed, w = 2 * Math.PI / HC.aidPeriod, ph = idx * HC.aidPhasePerPod;
+  const v = 0.7 * Math.cos(t * w + ph) + 0.3 * Math.cos(t * w / 1.45 + ph * 2.3 + 1.2);
+  const m = clamp(0.5 + 0.62 * v, 0, 1), k = m * m * (3 - 2 * m);                // dwells at both extremes
+  return (idx % 2 === 0 ? 1 : -1) * HC.aidAmplitude * k;
+}
+function spawnPod(z, instant) {
+  const p = podTemplate.clone();
+  p.userData.idx = HU.nextIdx++;
+  p.userData.age = instant ? 1 : 0;
+  p.rotation.y = Math.random() * Math.PI * 2;
+  p.position.set(podX(p.userData.idx), 0, z);
+  p.scale.setScalar(instant ? 1 : 0.01);
+  world.add(p); HU.pods.push(p);              // pods[0] is the nearest, the last one is the farthest
+}
+const _ra = new THREE.Vector3();
+function layoutAid() {
+  HU.pods.forEach(p => {
+    p.position.x = podX(p.userData.idx);
+    p.scale.setScalar(Math.min(1, 0.01 + p.userData.age / 0.35));
+  });
+  const n = Math.max(0, HU.pods.length - 1);
+  while (HU.rods.length < n) { const r = new THREE.Mesh(rodGeo, hm.rubber); world.add(r); HU.rods.push(r); }
+  while (HU.rods.length > n) world.remove(HU.rods.pop());
+  for (let i = 0; i < n; i++) {
+    const a = HU.pods[i], b = HU.pods[i + 1], r = HU.rods[i];
+    _ra.set(b.position.x - a.position.x, 0, b.position.z - a.position.z);
+    const len = _ra.length() || 1e-6;
+    r.position.set((a.position.x + b.position.x) / 2, HC.rodHeight, (a.position.z + b.position.z) / 2);
+    r.quaternion.setFromUnitVectors(UP, _ra.multiplyScalar(1 / len));
+    const th = Math.min(a.scale.x, b.scale.x);
+    r.scale.set(th, len, th);
+  }
+}
+function clearAid() {
+  HU.pods.forEach(p => world.remove(p)); HU.pods.length = 0;
+  HU.rods.forEach(r => world.remove(r)); HU.rods.length = 0;
+  HU.nextIdx = 0;
+}
+function resetAid() {                          // start with the aid already laid out in front of you
+  clearAid();
+  for (let z = -HC.aidMinZ; z >= -HU.spawnZ; z -= HC.aidSpacing) spawnPod(z, true);
+  layoutAid();
+}
+function updateAid(dt, speed) {
+  HU.pods.forEach(p => { p.position.z += speed * dt; p.userData.age += dt; });
+  while (HU.pods.length && HU.pods[0].position.z > CONFIG.despawnZ) world.remove(HU.pods.shift());
+  while (true) {
+    const far = HU.pods[HU.pods.length - 1];
+    const z = far ? far.position.z - HC.aidSpacing : -HU.spawnZ;
+    if (z < -HU.spawnZ) break;
+    spawnPod(z, false);
+  }
+  layoutAid();
+}
+
+/* ---------- the French bulldog (faces +Z, feet on Y = 0, about 0.3 m tall before dogScale) ---------- */
+function ell(m, sx, sy, sz, x, y, z) {
+  const o = mesh(new THREE.SphereGeometry(1, 20, 14), m, x, y, z); o.scale.set(sx, sy, sz); return o;
+}
+function makeDogModel() {
+  const root = new THREE.Group();
+  const inner = new THREE.Group(); root.add(inner);          // breathes, crouches and gets pushed back by the recoil
+
+  inner.add(ell(hm.fur, 0.15, 0.14, 0.22, 0, 0.21, 0));                  // body
+  inner.add(ell(hm.furLight, 0.1, 0.1, 0.09, 0, 0.19, 0.15));            // white chest
+  [[-0.075, 0.12], [0.075, 0.12], [-0.085, -0.12], [0.085, -0.12]].forEach(([x, z]) => {
+    inner.add(cyl(0.032, 0.036, 0.15, hm.fur, x, 0.075, z, 12));        // stubby legs
+    inner.add(ell(hm.furLight, 0.04, 0.025, 0.055, x, 0.02, z + 0.015)); // paws
+  });
+
+  const head = new THREE.Group(); head.position.set(0, 0.3, 0.17); inner.add(head);
+  head.add(ell(hm.fur, 0.115, 0.1, 0.1, 0, 0.04, 0.03));                 // skull
+  head.add(ell(hm.mask, 0.075, 0.055, 0.05, 0, -0.012, 0.108));          // flat black muzzle
+  head.add(ell(hm.mask, 0.04, 0.035, 0.04, -0.05, -0.03, 0.085));        // jowls
+  head.add(ell(hm.mask, 0.04, 0.035, 0.04, 0.05, -0.03, 0.085));
+  head.add(ell(hm.nose, 0.02, 0.014, 0.012, 0, 0.012, 0.152));           // nose
+  const ears = [];
+  [-1, 1].forEach(s => {
+    head.add(ell(hm.eyeW, 0.024, 0.026, 0.02, s * 0.05, 0.07, 0.1));     // eyes
+    head.add(ell(hm.nose, 0.014, 0.016, 0.012, s * 0.05, 0.07, 0.118));
+    const brow = ell(hm.mask, 0.03, 0.009, 0.014, s * 0.05, 0.103, 0.104); brow.rotation.z = s * 0.25; head.add(brow);
+    const ear = new THREE.Group(); ear.position.set(s * 0.07, 0.11, -0.005);   // big bat ears
+    const outer = mesh(new THREE.ConeGeometry(0.05, 0.13, 14), hm.fur, 0, 0.065, 0); outer.scale.z = 0.45;
+    const innr = mesh(new THREE.ConeGeometry(0.035, 0.1, 14), hm.pink, 0, 0.055, 0.012); innr.scale.z = 0.4;
+    ear.add(outer, innr); ear.rotation.z = -s * 0.28; head.add(ear); ears.push(ear);
+  });
+  const collar = mesh(new THREE.TorusGeometry(0.075, 0.013, 8, 24), hm.collar, 0, 0.25, 0.135);
+  collar.rotation.x = -0.96; inner.add(collar);
+  inner.add(ell(hm.gold, 0.02, 0.02, 0.01, 0, 0.2, 0.2));                // collar tag
+
+  const tail = new THREE.Group(); tail.position.set(0, 0.27, -0.2); inner.add(tail);
+  tail.add(ell(hm.fur, 0.022, 0.022, 0.045, 0, 0, -0.03));
+
+  // cannon strapped to its back
+  const strap = mesh(new THREE.TorusGeometry(0.15, 0.012, 8, 28), hm.collar, 0, 0.21, -0.03);
+  strap.scale.y = 0.95; inner.add(strap);
+  inner.add(box(0.1, 0.04, 0.12, hm.wood, 0, 0.35, -0.03));              // saddle
+  inner.add(cyl(0.026, 0.026, 0.16, hm.barrel, 0, 0.43, -0.03, 12));     // mount post
+  const barrel = new THREE.Group(); barrel.position.set(0, 0.53, -0.05); inner.add(barrel);
+  const tubeM = cyl(0.046, 0.06, 0.3, hm.barrel, 0, 0, 0.12, 20); tubeM.rotation.x = Math.PI / 2; barrel.add(tubeM);
+  const ringM = mesh(new THREE.TorusGeometry(0.05, 0.011, 8, 20), hm.barrel, 0, 0, 0.27); barrel.add(ringM);
+  barrel.add(mesh(new THREE.SphereGeometry(0.048, 14, 10), hm.barrel, 0, 0, -0.04));      // breech knob
+  barrel.add(tube([0, 0.06, -0.02], [0.02, 0.105, -0.045], 0.006, mat.fuse));
+  const spark = mesh(new THREE.SphereGeometry(0.02, 10, 8), mat.spark, 0.02, 0.11, -0.045);
+  barrel.add(spark);
+  const muzzle = new THREE.Object3D(); muzzle.position.set(0, 0, 0.3); barrel.add(muzzle);
+  barrel.rotation.order = 'YXZ';
+
+  const sh = new THREE.Mesh(shadowGeo, mat.shadow);
+  sh.rotation.x = -Math.PI / 2; sh.position.y = 0.004; sh.scale.setScalar(0.28); root.add(sh);
+  return { root, inner, head, ears, tail, barrel, muzzle, spark };
+}
+
+const DOG = Object.assign(makeDogModel(), {
+  x: 0, z: -HC.dogDistance, vx: 0, vz: 0, tx: 0, tz: -HC.dogDistance, yaw: 0,
+  mode: 'wander', t: 0, retarget: 1, hopT: -1, phase: 0, nextShot: 0, queue: 0, tel: 0.6,
+  kick: 0, earK: 0, restPitch: 0.4
+});
+DOG.root.scale.setScalar(HC.dogScale);
+DOG.root.visible = false;
+world.add(DOG.root);
+
+function resetDog() {
+  const D = DOG;
+  D.x = 0; D.z = -HC.dogDistance; D.vx = D.vz = 0; D.tx = D.x; D.tz = D.z; D.yaw = 0;
+  D.mode = 'wander'; D.t = 0; D.retarget = 0.8; D.hopT = -1; D.queue = 0; D.kick = 0;
+  D.nextShot = HC.firstShot;
+  D.barrel.rotation.set(-D.restPitch, 0, 0);
+  D.root.position.set(D.x, 0, D.z); D.root.rotation.y = 0;
+}
+
+/* ---------- cannonballs ---------- */
+const ballTemplate = (() => {
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(new THREE.SphereGeometry(HC.ballRadius, 18, 14), hm.ball));
+  g.add(cyl(0.012, 0.012, 0.04, mat.fuse, 0, HC.ballRadius + 0.012, 0, 8));
+  g.add(mesh(new THREE.SphereGeometry(0.02, 8, 6), mat.spark, 0, HC.ballRadius + 0.04, 0));   // lit fuse: easy to see
+  return g;
+})();
+const ballSpeed = () => HC.ballSpeedBase + HC.ballSpeedStep * state.levelHU;
+const telegraphFor = lvl => Math.max(HC.telegraphMin, HC.telegraphBase - HC.telegraphPerLevel * lvl);
+const shotInterval = () => lerp(HC.intervalMax, HC.intervalMin, (state.shots - 1) / 9) * (0.7 + Math.random() * 0.6);
+
+/* lobbed shot: reaches the target after T seconds, bulging HC.arcHeight above the straight line */
+function computeShot(s, t, speed) {
+  const dx = t.x - s.x, dy = t.y - s.y, dz = t.z - s.z;
+  const T = Math.max(0.35, Math.hypot(dx, dy, dz) / speed);
+  const g = 8 * HC.arcHeight / (T * T);
+  return { T, g, v: new THREE.Vector3(dx / T, dy / T + 4 * HC.arcHeight / T, dz / T) };
+}
+function aimBarrel(shot, snap, dt) {
+  const D = DOG, v = shot.v;
+  const yaw = Math.atan2(v.x, v.z) - D.yaw, pitch = Math.atan2(v.y, Math.hypot(v.x, v.z));
+  const k = snap ? 1 : 1 - Math.exp(-10 * dt);
+  D.barrel.rotation.y += (yaw - D.barrel.rotation.y) * k;
+  D.barrel.rotation.x += (-pitch - D.barrel.rotation.x) * k;
+}
+const _st = new THREE.Vector3(), _tg = new THREE.Vector3(), _hd = new THREE.Vector3();
+function muzzleLocal(out) { DOG.muzzle.getWorldPosition(out); world.worldToLocal(out); return out; }
+
+const puffGeo = new THREE.SphereGeometry(1, 10, 8);
+function addPuff(p, color, s0, s1, life, vx, vy, vz, op) {
+  const m = new THREE.Mesh(puffGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: op, depthWrite: false }));
+  m.position.copy(p); m.scale.setScalar(s0); world.add(m);
+  HU.puffs.push({ m, age: 0, life, s0, s1, vx, vy, vz, op });
+}
+function updatePuffs(dt) {
+  for (let i = HU.puffs.length - 1; i >= 0; i--) {
+    const f = HU.puffs[i]; f.age += dt;
+    const u = f.age / f.life;
+    if (u >= 1) { world.remove(f.m); f.m.material.dispose(); HU.puffs.splice(i, 1); continue; }
+    f.m.position.x += f.vx * dt; f.m.position.y += f.vy * dt; f.m.position.z += f.vz * dt;
+    f.m.scale.setScalar(lerp(f.s0, f.s1, Math.sqrt(u)));
+    f.m.material.opacity = f.op * (1 - u);
+  }
+}
+
+function fireCannon(pl) {
+  const D = DOG, sp = ballSpeed();
+  _tg.set(pl.x + (Math.random() * 2 - 1) * HC.aimNoise, state.eyeHeight - 0.02, pl.z);
+  let shot;
+  for (let i = 0; i < 3; i++) {                           // settle the barrel so the ball leaves along its axis
+    shot = computeShot(muzzleLocal(_st), _tg, sp);
+    aimBarrel(shot, true, 0);
+  }
+  shot = computeShot(muzzleLocal(_st), _tg, sp);
+  const obj = ballTemplate.clone(); obj.position.copy(_st); world.add(obj);
+  const shadow = new THREE.Mesh(shadowGeo, mat.shadow);
+  shadow.rotation.x = -Math.PI / 2; shadow.position.set(_st.x, 0.004, _st.z); shadow.scale.setScalar(HC.ballRadius * 1.4);
+  world.add(shadow);
+  HU.balls.push({ obj, shadow, v: shot.v, g: shot.g, prev: _st.clone(), passed: false, bounces: 0, age: 0 });
+  const dir = shot.v.clone().normalize();
+  addPuff(_st, 0xffd27a, 0.08, 0.4, 0.13, 0, 0, 0, 1);                                   // muzzle flash
+  for (let i = 0; i < 6; i++) {                                                          // smoke
+    addPuff(_st, 0xc9ced6, 0.07, 0.28 + Math.random() * 0.2, 0.8 + Math.random() * 0.6,
+      dir.x * 0.9 + (Math.random() - 0.5) * 0.5, dir.y * 0.9 + 0.2 + Math.random() * 0.3,
+      dir.z * 0.9 + (Math.random() - 0.5) * 0.5, 0.55);
+  }
+  D.kick = 1;
+  sfx('boom', D.x / 1.5);
+}
+function segDist(a, b, c) {                               // distance from point c to the segment a-b
+  const abx = b.x - a.x, aby = b.y - a.y, abz = b.z - a.z;
+  const l2 = abx * abx + aby * aby + abz * abz;
+  const t = l2 > 1e-9 ? clamp(((c.x - a.x) * abx + (c.y - a.y) * aby + (c.z - a.z) * abz) / l2, 0, 1) : 0;
+  return Math.hypot(a.x + abx * t - c.x, a.y + aby * t - c.y, a.z + abz * t - c.z);
+}
+function removeBall(i) {
+  const b = HU.balls[i];
+  world.remove(b.obj); world.remove(b.shadow); HU.balls.splice(i, 1);
+}
+function updateBalls(dt, pl) {
+  _hd.set(pl.x, pl.y, pl.z);
+  for (let i = HU.balls.length - 1; i >= 0; i--) {
+    const b = HU.balls[i], p = b.obj.position;
+    b.prev.copy(p); b.age += dt;
+    p.x += b.v.x * dt; p.z += b.v.z * dt;
+    p.y += b.v.y * dt - 0.5 * b.g * dt * dt; b.v.y -= b.g * dt;
+    b.obj.rotation.x += dt * 5; b.obj.rotation.z += dt * 2;
+    if (p.y < HC.ballRadius && b.v.y < 0) {               // bounce on the floor
+      p.y = HC.ballRadius; b.v.y *= -0.35; b.v.x *= 0.7; b.v.z *= 0.7; b.bounces++;
+    }
+    b.shadow.position.set(p.x, 0.004, p.z);
+    if (!b.passed && segDist(b.prev, p, _hd) < HC.hitRadius) {      // it got you
+      state.hits++; HU.tint = 1; sfx('hit', 0);
+      removeBall(i); continue;
+    }
+    if (!b.passed && p.z > pl.z + 0.25) { b.passed = true; state.dodged++; }   // ducked it
+    if (p.z > 2.5 || b.bounces > 2 || b.age > 6) removeBall(i);
+  }
+}
+function clearShots() {
+  while (HU.balls.length) removeBall(HU.balls.length - 1);
+  HU.puffs.forEach(f => { world.remove(f.m); f.m.material.dispose(); }); HU.puffs.length = 0;
+}
+
+/* ---------- red hit tint: a flat plane glued to the headset, in front of both eyes ---------- */
+const tintMat = new THREE.MeshBasicMaterial({ color: 0xff1a1a, transparent: true, opacity: 0,
+  depthTest: false, depthWrite: false, fog: false });
+const tint = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), tintMat);
+tint.position.z = -0.15; tint.renderOrder = 9999; tint.frustumCulled = false; tint.visible = false;
+scene.add(camera);                                         // children of the camera follow the head in XR
+camera.add(tint);
+function updateTint(dt) {
+  if (HU.tint > 0) HU.tint = Math.max(0, HU.tint - dt / HC.tintFade);
+  tintMat.opacity = HC.tintPeak * HU.tint * HU.tint;
+  tint.visible = HU.tint > 0;
+}
+
+/* ---------- little bit of synthesized sound: bark, cannon boom, thud ---------- */
+let AC = null;
+function initAudio() {
+  if (!HC.sound || AC) return;
+  try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { AC = null; }
+}
+function sfx(kind, pan) {
+  if (!AC) return;
+  try {
+    if (AC.state === 'suspended') AC.resume();
+    const t0 = AC.currentTime;
+    const bus = AC.createGain(); bus.gain.value = HC.volume;
+    let dest = AC.destination;
+    if (AC.createStereoPanner) { const p = AC.createStereoPanner(); p.pan.value = clamp(pan || 0, -1, 1); p.connect(AC.destination); dest = p; }
+    bus.connect(dest);
+    const tone = (type, f0, f1, dur, vol, at = 0) => {
+      const o = AC.createOscillator(), g = AC.createGain();
+      o.type = type; o.frequency.setValueAtTime(f0, t0 + at); o.frequency.exponentialRampToValueAtTime(f1, t0 + at + dur);
+      g.gain.setValueAtTime(0.0001, t0 + at);
+      g.gain.exponentialRampToValueAtTime(vol, t0 + at + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + at + dur);
+      o.connect(g); g.connect(bus); o.start(t0 + at); o.stop(t0 + at + dur + 0.02);
+    };
+    const noise = (dur, vol, cutoff) => {
+      const n = Math.floor(AC.sampleRate * dur), buf = AC.createBuffer(1, n, AC.sampleRate), d = buf.getChannelData(0);
+      for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+      const s = AC.createBufferSource(); s.buffer = buf;
+      const f = AC.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = cutoff;
+      const g = AC.createGain(); g.gain.value = vol;
+      s.connect(f); f.connect(g); g.connect(bus); s.start(t0);
+    };
+    if (kind === 'bark') { tone('sawtooth', 460, 250, 0.11, 0.3); tone('sawtooth', 430, 220, 0.13, 0.3, 0.15); }
+    else if (kind === 'boom') { tone('sine', 140, 38, 0.45, 0.9); noise(0.45, 0.8, 900); }
+    else if (kind === 'hit') { tone('sine', 110, 45, 0.25, 0.8); noise(0.2, 0.5, 1500); }
+  } catch (e) {}
+}
+
+/* ---------- dog behaviour ---------- */
+function beginAim(burst) {
+  const D = DOG;
+  D.mode = 'aim'; D.t = 0;
+  D.tel = burst ? HC.burstTelegraph : telegraphFor(state.levelHU);
+  sfx('bark', D.x / 1.5);
+}
+function updateDog(dt, pl, active) {
+  const D = DOG;
+  D.phase += dt;
+  let spd = HC.dogSpeed;
+  const rate = 2.2;
+
+  if (active) {
+    D.t += dt;
+    switch (D.mode) {
+      case 'wander':                                       // small, lively moves so your eyes keep finding it
+        if (D.t > D.retarget || Math.hypot(D.tx - D.x, D.tz - D.z) < 0.08) {
+          D.tx = (Math.random() * 2 - 1) * HC.dogRangeX;
+          D.tz = -HC.dogDistance + (Math.random() - 0.3) * HC.dogRangeZ;
+          D.t = 0; D.retarget = 1.2 + Math.random() * 2.0;
+          if (D.hopT < 0 && Math.random() < 0.35) D.hopT = 0;
+        }
+        if (state.elapsed >= D.nextShot) {
+          let n = 1;
+          const burstChance = clamp((state.shots - HC.burstStartShots) * HC.burstChancePerShot, 0, HC.burstChanceMax);
+          if (Math.random() < burstChance) { n = 2; if (state.shots >= 8 && Math.random() < 0.3) n = 3; }
+          D.queue = n; beginAim(false);
+        }
+        break;
+      case 'aim': {                                        // plant its feet, track your head, charge the fuse
+        D.tx = D.x; D.tz = D.z; spd = 0;
+        _tg.set(pl.x, state.eyeHeight - 0.02, pl.z);
+        aimBarrel(computeShot(muzzleLocal(_st), _tg, ballSpeed()), false, dt);
+        if (D.t >= D.tel) {
+          fireCannon(pl);
+          D.queue--; D.mode = 'recoil'; D.t = 0;
+        }
+        break;
+      }
+      case 'recoil':
+        D.tx = D.x; D.tz = D.z; spd = 0;
+        if (D.t >= (D.queue > 0 ? HC.burstGap : 0.45)) {
+          if (D.queue > 0) beginAim(true);
+          else { D.mode = 'wander'; D.t = 0; D.retarget = 0.6; D.nextShot = state.elapsed + shotInterval(); }
+        }
+        break;
+    }
+  } else { D.tx = D.x; D.tz = D.z; spd = 0; }
+
+  // steer with a little inertia
+  const dx = D.tx - D.x, dz = D.tz - D.z, dist = Math.hypot(dx, dz) || 1e-6;
+  const sp = Math.min(spd, dist * 2), k = 1 - Math.exp(-rate * dt);
+  D.vx += (dx / dist * sp - D.vx) * k; D.vz += (dz / dist * sp - D.vz) * k;
+  D.x += D.vx * dt; D.z += D.vz * dt;
+
+  // always face you
+  const want = Math.atan2(pl.x - D.x, pl.z - D.z);
+  let diff = want - D.yaw; diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+  D.yaw += clamp(diff, -3 * dt, 3 * dt);
+
+  // hops
+  let hopY = 0;
+  if (D.hopT >= 0) {
+    D.hopT += dt;
+    const u = D.hopT / 0.45;
+    if (u >= 1) D.hopT = -1; else hopY = Math.sin(Math.PI * u) * 0.12;
+  }
+  D.root.position.set(D.x, hopY, D.z);
+  D.root.rotation.y = D.yaw;
+
+  // animation
+  const aiming = D.mode === 'aim', p = aiming ? clamp(D.t / D.tel, 0, 1) : 0;
+  const speedNow = Math.hypot(D.vx, D.vz);
+  D.kick = Math.max(0, D.kick - dt * 3.5);
+  D.inner.position.y = Math.abs(Math.sin(D.phase * 7)) * 0.012 * Math.min(speedNow / 0.35, 1);
+  D.inner.position.z = -0.06 * D.kick;
+  D.inner.scale.y = 1 + 0.015 * Math.sin(D.phase * 2.5) - 0.08 * p - 0.05 * D.kick;
+  D.head.rotation.z = Math.sin(D.phase * 0.8) * 0.08 * (1 - p);              // curious head tilt
+  D.head.rotation.x = 0.14 * p;
+  D.tail.rotation.y = Math.sin(D.phase * (aiming ? 20 : 9)) * 0.6;
+  if (Math.random() < dt * 0.35) D.earK = 1;
+  D.earK = Math.max(0, D.earK - dt * 4);
+  D.ears.forEach((e, i) => { e.rotation.x = Math.sin(D.phase * 32 + i) * 0.25 * D.earK; });
+  D.spark.scale.setScalar(aiming ? 1 + p * 0.8 + 0.5 * Math.sin(D.phase * 36) : 0.8);
+  D.barrel.position.z = -0.05 - 0.07 * D.kick;
+  if (!aiming && active) {                                 // relax the barrel between shots
+    const kk = 1 - Math.exp(-3 * dt);
+    D.barrel.rotation.y += (0 - D.barrel.rotation.y) * kk;
+    D.barrel.rotation.x += (-D.restPitch - D.barrel.rotation.x) * kk;
+  }
+}
+
+function updateHeadsUp(dt) {
+  const pl = playerLocal();
+  updateAid(dt, speedFor(state.levelHU));
+  updateDog(dt, pl, true);
+  updateBalls(dt, pl);
+  updatePuffs(dt);
+}
+function idleHeadsUp(dt) { updateDog(dt, playerLocal(), false); }
+
+function resetHeadsUp() {
+  clearShots();
+  const on = state.game === 'headsup';
+  DOG.root.visible = on;
+  if (on) { resetAid(); resetDog(); } else clearAid();
+}
+resetHeadsUp();
 
 /* ============================== UI PANEL ============================== */
 const CW = 1024, CH = 704;
@@ -1083,7 +1348,8 @@ world.add(panel);
 
 const treadmillOnly = () => state.game === 'treadmill';
 const insanityOnly = () => state.game === 'insanity';
-const hasDifficulty = () => state.game !== 'insanity';
+const headsupOnly = () => state.game === 'headsup';
+const hasDifficulty = () => state.game === 'treadmill' || state.game === 'keepaway';
 const buttons = [
   { id: 'gameprev', x: 40,  y: 62,  w: 120, h: 62, label: '◀' },
   { id: 'gamenext', x: 864, y: 62,  w: 120, h: 62, label: '▶' },
@@ -1094,6 +1360,8 @@ const buttons = [
       label: n + ' LANES', sel: () => state.lanes === n, show: treadmillOnly })),
   { id: 'densdown', x: 215, y: 372, w: 120, h: 66, label: '−', show: insanityOnly },
   { id: 'densup',   x: 864, y: 372, w: 120, h: 66, label: '+', show: insanityOnly },
+  { id: 'shotsdown', x: 215, y: 372, w: 120, h: 66, label: '−', show: headsupOnly },
+  { id: 'shotsup',   x: 864, y: 372, w: 120, h: 66, label: '+', show: headsupOnly },
   ...CONFIG.difficulties.map((d, i) => ({ id: 'diff' + d, x: 215 + i * 194, y: 454, w: 184, h: 66,
       label: () => state.game === 'keepaway' ? d.toUpperCase() + ' (' + KC.perDifficulty[d].count + ')' : d.toUpperCase(),
       sel: () => state.difficulty === d, show: hasDifficulty })),
@@ -1117,7 +1385,7 @@ const fmtTime = t => {
 
 let lastTimerText = '';
 function drawPanel() {
-  const ka = state.game === 'keepaway', ins = state.game === 'insanity';
+  const ka = state.game === 'keepaway', ins = state.game === 'insanity', hu = state.game === 'headsup';
   ctx.clearRect(0, 0, CW, CH);
   ctx.fillStyle = 'rgba(10,18,34,0.9)';
   rr(0, 0, CW, CH, 36); ctx.fill();
@@ -1143,6 +1411,7 @@ function drawPanel() {
   ctx.fillStyle = '#ffd166'; ctx.font = '600 34px system-ui, sans-serif';
   const extra = ka ? 'Attacks ' + state.attacks
     : ins ? 'Density ' + state.density + '  ·  Passed ' + state.passed
+    : hu ? 'Dodged ' + state.dodged + '  ·  Hit ' + state.hits
     : 'Passed ' + state.passed;
   ctx.fillText('Level ' + curLevel() + '  ·  ' + shownSpeed().toFixed(1) + ' m/s  ·  ' + extra, CW / 2, 236);
 
@@ -1172,11 +1441,26 @@ function drawPanel() {
     ctx.fillStyle = '#1a2740'; rr(215, 454, 769, 66, 20); ctx.fill();
     ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.font = '700 26px system-ui, sans-serif';
     ctx.fillText('ONE WIDE LANE  ·  CLUTTERED  ·  USE YOUR HANDS', 215 + 769 / 2, 489);
+  } else if (hu) {
+    ctx.font = '700 25px system-ui, sans-serif';
+    ctx.fillText('SHOTS', 40, 405);
+    ctx.fillStyle = '#1a2740'; rr(347, 372, 505, 66, 20); ctx.fill();
+    ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.font = '700 28px system-ui, sans-serif';
+    ctx.fillText('CANNON SHOTS  ' + state.shots + ' / 10', 347 + 505 / 2, 394);
+    for (let i = 0; i < 10; i++) {                       // level bar
+      ctx.fillStyle = i < state.shots ? '#e63946' : '#2c3b58';
+      ctx.fillRect(372 + i * 46, 417, 40, 9);
+    }
+    ctx.textAlign = 'left'; ctx.fillStyle = '#9fb3d1'; ctx.font = '700 25px system-ui, sans-serif';
+    ctx.fillText('GOAL', 40, 487);
+    ctx.fillStyle = '#1a2740'; rr(215, 454, 769, 66, 20); ctx.fill();
+    ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.font = '700 26px system-ui, sans-serif';
+    ctx.fillText('STICKHANDLE THE AID  ·  DUCK THE CANNONBALLS', 215 + 769 / 2, 489);
   } else {
     ctx.font = '700 28px system-ui, sans-serif';
     ctx.fillText('LANES', 40, 405);
   }
-  if (!ins) {
+  if (hasDifficulty()) {
     ctx.textAlign = 'left'; ctx.fillStyle = '#9fb3d1'; ctx.font = '700 25px system-ui, sans-serif';
     ctx.fillText('DIFFICULTY', 40, 487);
   }
@@ -1197,11 +1481,13 @@ function drawPanel() {
     if (b.id === 'faster' && curLevel() >= CONFIG.maxLevel) base = '#1a2236';
     if (b.id === 'densdown' && state.density <= 1) base = '#1a2236';
     if (b.id === 'densup' && state.density >= 10) base = '#1a2236';
+    if (b.id === 'shotsdown' && state.shots <= 1) base = '#1a2236';
+    if (b.id === 'shotsup' && state.shots >= 10) base = '#1a2236';
     ctx.fillStyle = hov ? '#4cc9f0' : base;
     rr(b.x, b.y, b.w, b.h, 20); ctx.fill();
     if (sel && !hov) { ctx.strokeStyle = '#4cc9f0'; ctx.lineWidth = 4; rr(b.x, b.y, b.w, b.h, 20); ctx.stroke(); }
     ctx.fillStyle = hov ? '#0b1220' : '#ffffff';
-    const fs = b.id === 'toggle' ? 62 : b.id.startsWith('game') ? 34 : b.id.startsWith('dens') ? 44
+    const fs = b.id === 'toggle' ? 62 : b.id.startsWith('game') ? 34 : (b.id.startsWith('dens') || b.id.startsWith('shots')) ? 44
       : label.length > 9 ? 26 : b.h <= 70 ? 30 : 32;
     ctx.font = (b.id === 'toggle' ? '800 ' : '700 ') + fs + 'px system-ui, sans-serif';
     ctx.fillText(label, b.x + b.w / 2, b.y + b.h / 2 + 2);
@@ -1211,12 +1497,13 @@ function drawPanel() {
 drawPanel();
 
 function resetRun() {
-  state.mode = 'idle'; state.elapsed = 0; state.passed = 0; state.attacks = 0;
+  state.mode = 'idle'; state.elapsed = 0; state.passed = 0; state.attacks = 0; state.hits = 0; state.dodged = 0;
   state.spawnTimer = 0; state.nextInterval = 0.5;
   resetPro();
   clearObstacles();
   clearDefenders();
   resetInsanity();
+  resetHeadsUp();
   lastTimerText = '';
 }
 
@@ -1250,6 +1537,7 @@ function pressButton(id) {
   } else {
     switch (id) {
       case 'toggle':
+        if (AC && AC.state === 'suspended') AC.resume();
         if (state.mode === 'idle' && state.game === 'keepaway') spawnDefenders();
         state.mode = state.mode === 'running' ? 'paused' : 'running';
         break;
@@ -1258,6 +1546,7 @@ function pressButton(id) {
         const delta = id === 'faster' ? 1 : -1;
         if (state.game === 'keepaway') state.levelKA = clamp(state.levelKA + delta, CONFIG.minLevel, CONFIG.maxLevel);
         else if (state.game === 'insanity') state.levelIN = clamp(state.levelIN + delta, CONFIG.minLevel, CONFIG.maxLevel);
+        else if (state.game === 'headsup') state.levelHU = clamp(state.levelHU + delta, CONFIG.minLevel, CONFIG.maxLevel);
         else state.level = clamp(state.level + delta, CONFIG.minLevel, CONFIG.maxLevel);
         saveSettings();
         break;
@@ -1265,6 +1554,11 @@ function pressButton(id) {
       case 'densdown':
       case 'densup':
         state.density = clamp(state.density + (id === 'densup' ? 1 : -1), 1, 10);
+        saveSettings();
+        break;
+      case 'shotsdown':
+      case 'shotsup':
+        state.shots = clamp(state.shots + (id === 'shotsup' ? 1 : -1), 1, 10);
         saveSettings();
         break;
       case 'reset': resetRun(); break;
@@ -1316,6 +1610,7 @@ function placeWorld() {
   cam.getWorldDirection(_d);
   if (_p.y < 0.3) return;                        // tracking not ready yet
   const yaw = Math.atan2(-_d.x, -_d.z);
+  state.eyeHeight = clamp(_p.y, 1.0, 2.1);
   world.position.set(_p.x, 0, _p.z);
   world.rotation.set(0, yaw, 0);
   panel.position.set(0, Math.max(0.9, _p.y + CONFIG.panelHeightOffset), -CONFIG.panelDistance);
@@ -1345,11 +1640,13 @@ renderer.setAnimationLoop(() => {
     state.elapsed += dt;
     if (state.game === 'treadmill') updateTreadmill(dt);
     else if (state.game === 'keepaway') updateKeepAway(dt);
+    else if (state.game === 'headsup') updateHeadsUp(dt);
     else updateInsanity(dt);
 
-    const t = fmtTime(state.elapsed) + '|' + state.passed + '|' + state.attacks;
+    const t = fmtTime(state.elapsed) + '|' + state.passed + '|' + state.attacks + '|' + state.hits + '|' + state.dodged;
     if (t !== lastTimerText) { lastTimerText = t; drawPanel(); }
-  }
+  } else if (state.mode === 'idle' && state.game === 'headsup') idleHeadsUp(dt);   // dog wags its tail while you pick settings
+  updateTint(dt);
 
   renderer.render(scene, camera);
 });
@@ -1377,6 +1674,7 @@ checkSupport();
 
 enterBtn.addEventListener('click', async () => {
   msg.textContent = '';
+  initAudio();
   try {
     const session = await navigator.xr.requestSession('immersive-ar', {
       requiredFeatures: ['local-floor'],
