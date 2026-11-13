@@ -29,7 +29,7 @@
 <body>
 <div id="ui">
   <h1>🏒 SickMitts VR</h1>
-  <p>Clear your floor, put on your Quest 3, and tap below. Use the arrows on the floating panel to pick a game: <b>Endless Object Treadmill</b> sends objects down several lanes, <b>Keep Away</b> puts opposing defencemen on the ice around you, <b>Insanity</b> fills one wide lane with clutter that needs toe drags and fancy hands, <b>Heads Up!</b> sends a wiggling zig-zag training aid down the lane while a French bulldog fires cannonballs at your head, so you have to duck while you stickhandle, and <b>The Floor Is Lava</b> turns the floor into lava with a winding path you have to keep your puck on. Point a controller (or pinch with your hand) at the panel to adjust the settings, then start.</p>
+  <p>Clear your floor, put on your Quest 3, and tap below. Use the arrows on the floating panel to pick a game: <b>Endless Object Treadmill</b> sends objects down several lanes, <b>Keep Away</b> puts opposing defencemen on the ice around you, <b>Insanity</b> fills one wide lane with clutter that needs toe drags and fancy hands, <b>Heads Up!</b> sends a wiggling zig-zag training aid down the lane while a French bulldog fires cannonballs at your head, so you have to duck while you stickhandle, <b>The Floor Is Lava</b> turns the floor into lava with a winding path you have to keep your puck on, and <b>Dog Attack</b> fills a small patch of floor with wandering French bulldogs you have to stickhandle around. Point a controller (or pinch with your hand) at the panel to adjust the settings, then start.</p>
   <button id="enter" disabled>Checking MR support…</button>
   <div id="msg"></div>
   <div id="build" style="color:#5f7391;font-size:.8rem"></div>
@@ -38,7 +38,7 @@
 <script type="module">
 import * as THREE from 'three';
 
-const BUILD = 'lava-2';   // shown on the start screen and panel so you can tell which copy is loaded
+const BUILD = 'dogs-2';   // shown on the start screen and panel so you can tell which copy is loaded
 document.getElementById('build').textContent = 'build ' + BUILD;
 
 /* ============================== CONFIG ============================== */
@@ -79,6 +79,23 @@ const CONFIG = {
     pathMinHalf: 0.14,         // half-width (m) of the guaranteed open path through the clutter
     startDensity: 4, startLevel: 2
   },
+  dogAttack: {
+    startDist: 0.9144,         // metres from you to the near edge of the play area (3 ft)
+    halfWidth: 0.9144,         // metres from the centre line to each side (3 ft left, 3 ft right)
+    depth: 0.9144,             // metres from the near edge to the far edge (3 ft)
+    scaleMin: 0.5, scaleMax: 2.0,   // PLAYSPACE buttons: 50% to 200%, in steps of 10%
+    dogScale: 0.5,             // 1.0 = a 0.6 m long dog; 0.5 makes a dog about as long as an adult sneaker (0.3 m)
+    sepDist: 0.34,             // dogs steer away from each other when closer than this (m)
+    turnRate: 4.0,             // radians per second a dog can turn
+    baseSpeed: 0.2, speedStep: 0.09,   // walking speed (m/s) = baseSpeed + speedStep * level
+    startLevel: 3,
+    perDifficulty: {           // dogs: how many. turnMin/turnMax: seconds between random direction changes.
+      easy:   { dogs: 4,  turnMin: 1.2, turnMax: 3.0, bigTurn: 0.35, pause: 0.25 },     // bigTurn: chance of a sharp turn. pause: chance of a stop-and-sniff after a turn.
+      medium: { dogs: 6,  turnMin: 1.0, turnMax: 2.5, bigTurn: 0.45, pause: 0.18 },
+      hard:   { dogs: 8,  turnMin: 0.7, turnMax: 2.0, bigTurn: 0.55, pause: 0.10 },
+      pro:    { dogs: 11, turnMin: 0.5, turnMax: 1.6, bigTurn: 0.65, pause: 0.05 }
+    }
+  },
   lava: {
     lavaWidth: 3.2,            // metres of lava across; the path winds inside it
     ds: 0.1,                   // spacing of the points that make up the path (m)
@@ -86,6 +103,8 @@ const CONFIG = {
     startStraight: 2.0,        // path is dead straight for this long when a run starts (m)
     puckLine: true,            // thin line across the lane where your puck is assumed to be (see keepAway.puckOffset)
     pathFill: 0.10,            // how solid the path is (0 = clear, 1 = solid slate); its bright edges always show
+    scaleMin: 0.5, scaleMax: 1.5,   // PLAYSPACE buttons: how wide and long the lava is (50% to 150%). The path itself narrows a little below 100% but never widens
+    edgeMargin: 0.05,          // the path always stays at least this far inside the lava (m)
     startLevel: 2,
     perDifficulty: {
       // width: path width (m). sMax: steepest sideways slope (sideways m per forward m).
@@ -150,7 +169,8 @@ const CONFIG = {
       pro:    { count: 4, rMin: 1.6, rMax: 2.8, feint: 0.3,  simul: 2 }
     }
   },
-  panelWidth: 1.0,             // metres
+  panelWidth: 1.0,             // metres at panelScale 1
+  panelScale: 1.25,            // makes the whole menu this much bigger, with the text staying the same size (1 = old size)
   panelDistance: 1.0,          // metres in front of the player
   panelHeightOffset: -0.03     // relative to head height at (re)center (raise to move the panel up)
 };
@@ -161,7 +181,7 @@ const state = {
   level: CONFIG.startLevel,
   lanes: CONFIG.startLanes,
   difficulty: CONFIG.startDifficulty,
-  game: 'treadmill',           // treadmill | keepaway | insanity | headsup | lava
+  game: 'treadmill',           // treadmill | keepaway | insanity | headsup | lava | dogattack
   levelKA: 2,                  // Keep Away speed level
   levelIN: CONFIG.insanity.startLevel,   // Insanity speed level
   density: CONFIG.insanity.startDensity, // Insanity clutter level 1-10
@@ -169,6 +189,9 @@ const state = {
   shots: CONFIG.headsUp.startShots,      // Heads Up! cannon shot volume 1-10
   levelLV: CONFIG.lava.startLevel,       // The Floor Is Lava speed level
   distance: 0,                 // The Floor Is Lava: metres travelled along the path
+  levelDA: CONFIG.dogAttack.startLevel,   // Dog Attack speed level
+  scaleDA: 1,                  // Dog Attack playspace scale (1 = 3 ft each way)
+  scaleLV: 1,                  // The Floor Is Lava playspace scale
   hits: 0,                     // Heads Up! cannonballs that hit you
   dodged: 0,                   // Heads Up! cannonballs you ducked
   eyeHeight: 1.6,              // standing head height, measured on (re)center
@@ -207,13 +230,16 @@ const GAMES = [
   { id: 'keepaway',  name: 'KEEP AWAY' },
   { id: 'insanity',  name: 'INSANITY' },
   { id: 'headsup',   name: 'HEADS UP!' },
-  { id: 'lava',      name: 'THE FLOOR IS LAVA' }
+  { id: 'lava',      name: 'THE FLOOR IS LAVA' },
+  { id: 'dogattack', name: 'DOG ATTACK' }
 ];
 const IC = CONFIG.insanity;
 const HC = CONFIG.headsUp;
 const curLevel = () => (state.game === 'keepaway' ? state.levelKA : state.game === 'insanity' ? state.levelIN
-  : state.game === 'headsup' ? state.levelHU : state.game === 'lava' ? state.levelLV : state.level);
+  : state.game === 'headsup' ? state.levelHU : state.game === 'lava' ? state.levelLV
+  : state.game === 'dogattack' ? state.levelDA : state.level);
 const shownSpeed = () => (state.game === 'keepaway' ? attackSpeedFor(state.levelKA)
+  : state.game === 'dogattack' ? daSpeed(state.levelDA)
   : speedFor(state.game === 'insanity' ? state.levelIN : state.game === 'headsup' ? state.levelHU : state.game === 'lava' ? state.levelLV : state.level));
 
 /* ---------- remember settings between sessions ---------- */
@@ -230,6 +256,10 @@ const SAVE_KEY = 'stickMR.v2';
     if (Number.isInteger(s.levelHU)) state.levelHU = clamp(s.levelHU, CONFIG.minLevel, CONFIG.maxLevel);
     if (Number.isInteger(s.shots)) state.shots = clamp(s.shots, 1, 10);
     if (Number.isInteger(s.levelLV)) state.levelLV = clamp(s.levelLV, CONFIG.minLevel, CONFIG.maxLevel);
+    if (Number.isInteger(s.levelDA)) state.levelDA = clamp(s.levelDA, CONFIG.minLevel, CONFIG.maxLevel);
+    const sc = (v, lim) => Math.round(clamp(v, lim.scaleMin, lim.scaleMax) * 10) / 10;
+    if (Number.isFinite(s.scaleDA)) state.scaleDA = sc(s.scaleDA, CONFIG.dogAttack);
+    if (Number.isFinite(s.scaleLV)) state.scaleLV = sc(s.scaleLV, CONFIG.lava);
     if (GAMES.some(g => g.id === s.game)) state.game = s.game;
     if (s.panel && [s.panel.x, s.panel.y, s.panel.z].every(Number.isFinite)) state.panelPose = { x: s.panel.x, y: s.panel.y, z: s.panel.z };
   } catch (e) {}
@@ -239,7 +269,8 @@ function saveSettings() {
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(
     { lanes: state.lanes, difficulty: state.difficulty, level: state.level,
       levelKA: state.levelKA, levelIN: state.levelIN, density: state.density,
-      levelHU: state.levelHU, shots: state.shots, levelLV: state.levelLV, game: state.game, panel: state.panelPose })); } catch (e) {}
+      levelHU: state.levelHU, shots: state.shots, levelLV: state.levelLV,
+      levelDA: state.levelDA, scaleDA: state.scaleDA, scaleLV: state.scaleLV, game: state.game, panel: state.panelPose })); } catch (e) {}
 }
 
 /* ============================== THREE SETUP ============================== */
@@ -313,7 +344,7 @@ kaRing.rotation.x = -Math.PI / 2; kaRing.position.y = 0.003;
 world.add(kaRing);
 function applyGameVisuals() {
   rebuildLanes();                                   // N lanes, or one wide lane for Insanity
-  laneGroup.visible = state.game !== 'keepaway' && state.game !== 'lava';
+  laneGroup.visible = state.game !== 'keepaway' && state.game !== 'lava' && state.game !== 'dogattack';
   kaRing.visible = state.game === 'keepaway';
 }
 applyGameVisuals();
@@ -485,6 +516,7 @@ const templates = [makeWaterBottle, makePylon, makeDynamite, makeSkates, makeGlo
 
 /* ---------- Insanity-only extras: bigger, odder shapes. Every model's long axis runs along its local X axis. ---------- */
 const im = {
+  bench: std(0x34455f, { roughness: 0.6 }), benchTop: std(0xb9c3d1, { roughness: 0.5 }),
   stickA: std(0x20252d, { roughness: 0.35 }), stickB: std(0xd9d3c3, { roughness: 0.5 }), stickC: std(0x1f4e9c, { roughness: 0.4 }),
   tape: std(0xf5f5f5, { roughness: 0.8 }), tapeBlack: std(0x0b0b0d, { roughness: 0.8 }), wood: std(0xe3c28a, { roughness: 0.7 }),
   bagRed: std(0xb3202c, { roughness: 0.75 }), bagNavy: std(0x16294d, { roughness: 0.75 }), strap: std(0x0e0f12, { roughness: 0.8 }),
@@ -602,6 +634,15 @@ function makeZamboni() {                                      // ice resurfacer:
   return g;
 }
 
+function makeBench() {                                       // low team bench, 1.2 m long, front/back along local X
+  const g = new THREE.Group();
+  g.add(box(1.2, 0.26, 0.28, im.bench, 0, 0.13, 0));
+  g.add(box(1.24, 0.04, 0.32, im.benchTop, 0, 0.28, 0));
+  g.add(box(1.2, 0.2, 0.03, im.bench, 0, 0.4, -0.145));                         // low backrest
+  [-0.5, 0.5].forEach(x => g.add(box(0.05, 0.22, 0.285, im.stickA, x, 0.13, 0)));
+  return g;
+}
+
 /* Insanity catalogue: model, footprint (capsules in model coordinates: x0,z0 -> x1,z1 with radius r),
    how it is turned on the floor, how likely it is, and (optionally) where across the lane it goes.
    A footprint is what the generator keeps the gap around and keeps off the guaranteed open path. */
@@ -623,22 +664,26 @@ const crossCaps = [-1, 1].map(sg => {                         // the two sticks 
   return { x0: -h * Math.cos(a), z0: h * Math.sin(a), x1: h * Math.cos(a), z1: -h * Math.sin(a), r: 0.06 };
 });
 const INS = [];
-const IN_BASE_R = [0.12, 0.19, 0.10, 0.22, 0.24, 0.27];             // footprint radius of the six treadmill objects
-templates.forEach((tpl, i) => INS.push({ tpl, caps: [{ x0: 0, z0: 0, x1: 0, z1: 0, r: IN_BASE_R[i] }], ang: () => (Math.random() - 0.5) * 0.8, weight: 0.8 }));
+const IN_BASE_R = [0.12, 0.19, 0.10, 0.22, 0.24, 0.27];       // footprint radius of the six treadmill objects
+const IN_TPL_WEIGHT = [0.3, 0.3, 0, 0.7, 0.7, 0.8];            // bottle, pylon, dynamite (left out: no TNT here), skates, gloves, mini net
+templates.forEach((tpl, i) => {
+  if (IN_TPL_WEIGHT[i] > 0) INS.push({ tpl, caps: [{ x0: 0, z0: 0, x1: 0, z1: 0, r: IN_BASE_R[i] }], ang: () => (Math.random() - 0.5) * 0.8, weight: IN_TPL_WEIGHT[i] });
+});
 [
-  { obj: () => makeStick(1.5, im.stickA, im.stickA), L: 1.5, r: 0.06, ang: angStick, weight: 1.1, sh: [0.75, 0.06] },
-  { obj: () => makeStick(1.5, im.stickB, im.stickC), L: 1.5, r: 0.06, ang: angStick, weight: 1.1, sh: [0.75, 0.06] },
-  { obj: () => makeStick(1.0, im.stickC, im.stickB), L: 1.0, r: 0.06, ang: angStick, weight: 1.1, sh: [0.5, 0.06] },
-  { obj: () => makeStick(1.0, im.stickB, im.stickA), L: 1.0, r: 0.06, ang: angStick, weight: 1.1, sh: [0.5, 0.06] },
+  { obj: () => makeStick(1.5, im.stickA, im.stickA), L: 1.5, r: 0.06, ang: angStick, weight: 1.3, sh: [0.75, 0.06] },
+  { obj: () => makeStick(1.5, im.stickB, im.stickC), L: 1.5, r: 0.06, ang: angStick, weight: 1.3, sh: [0.75, 0.06] },
+  { obj: () => makeStick(1.0, im.stickC, im.stickB), L: 1.0, r: 0.06, ang: angStick, weight: 1.0, sh: [0.5, 0.06] },
+  { obj: () => makeStick(1.0, im.stickB, im.stickA), L: 1.0, r: 0.06, ang: angStick, weight: 1.0, sh: [0.5, 0.06] },
   { obj: makeGoalieStick, L: 1.55, r: 0.075, ang: angStick, weight: 1.0, sh: [0.78, 0.08] },
-  { obj: makeCrossedSticks, caps: crossCaps, ang: angAny, weight: 1.0, sh: [0.7, 0.55] },
-  { obj: () => makeBag(im.bagRed), L: 1.0, r: 0.2, ang: angAny, weight: 0.6, sh: [0.5, 0.25] },
-  { obj: () => makeBag(im.bagNavy), L: 1.0, r: 0.2, ang: angAny, weight: 0.6, sh: [0.5, 0.25] },
-  { obj: makeGoaliePad, L: 0.96, r: 0.155, ang: angAny, weight: 0.9, sh: [0.5, 0.18] },
-  { obj: makeBucket, caps: [{ x0: 0, z0: 0, x1: 0, z1: 0, r: 0.18 }], ang: angAny, weight: 0.8, sh: [0.21, 0.21] },
-  { obj: makeHelmet, caps: [{ x0: 0, z0: 0, x1: 0, z1: 0, r: 0.15 }], ang: angAny, weight: 0.8, sh: [0.19, 0.19] },
-  { obj: makeWideNet, L: 1.1, r: 0.25, ang: angNet, weight: 1.2, sh: [0.6, 0.3] },
-  { obj: makeZamboni, L: 1.5, r: 0.42, ang: angZam, weight: 0.5, sh: [0.8, 0.46],
+  { obj: makeCrossedSticks, caps: crossCaps, ang: angAny, weight: 1.1, sh: [0.7, 0.55] },
+  { obj: () => makeBag(im.bagRed), L: 1.0, r: 0.2, ang: angAny, weight: 1.0, sh: [0.5, 0.25] },
+  { obj: () => makeBag(im.bagNavy), L: 1.0, r: 0.2, ang: angAny, weight: 1.0, sh: [0.5, 0.25] },
+  { obj: makeGoaliePad, L: 0.96, r: 0.155, ang: angAny, weight: 1.2, sh: [0.5, 0.18] },
+  { obj: makeBench, L: 1.24, r: 0.16, ang: angStick, weight: 1.0, sh: [0.65, 0.2] },
+  { obj: makeBucket, caps: [{ x0: 0, z0: 0, x1: 0, z1: 0, r: 0.18 }], ang: angAny, weight: 0.5, sh: [0.21, 0.21] },
+  { obj: makeHelmet, caps: [{ x0: 0, z0: 0, x1: 0, z1: 0, r: 0.15 }], ang: angAny, weight: 0.5, sh: [0.19, 0.19] },
+  { obj: makeWideNet, L: 1.1, r: 0.25, ang: angNet, weight: 1.5, sh: [0.6, 0.3] },
+  { obj: makeZamboni, L: 1.5, r: 0.42, ang: angZam, weight: 0.7, sh: [0.8, 0.46],
     xPick: () => (Math.random() < 0.5 ? -1 : 1) * IC.laneWidth / 4 + (Math.random() - 0.5) * 0.08 }    // fills one half of the lane
 ].forEach(d => INS.push({ tpl: inTpl(d.obj(), d.sh[0], d.sh[1]), caps: d.caps || capLine(d.L, d.r), ang: d.ang, weight: d.weight, xPick: d.xPick }));
 const INS_WEIGHT = INS.reduce((a, d) => a + d.weight, 0);
@@ -1224,19 +1269,23 @@ function updateAid(dt, speed) {
 function ell(m, sx, sy, sz, x, y, z) {
   const o = mesh(new THREE.SphereGeometry(1, 20, 14), m, x, y, z); o.scale.set(sx, sy, sz); return o;
 }
-function makeDogModel() {
+function makeDogModel(opts = {}) {
+  const fur = opts.fur || hm.fur, furL = opts.furLight || hm.furLight, cannon = opts.cannon !== false;
+  const legs = [];
   const root = new THREE.Group();
   const inner = new THREE.Group(); root.add(inner);          // breathes, crouches and gets pushed back by the recoil
 
-  inner.add(ell(hm.fur, 0.15, 0.14, 0.22, 0, 0.21, 0));                  // body
-  inner.add(ell(hm.furLight, 0.1, 0.1, 0.09, 0, 0.19, 0.15));            // white chest
+  inner.add(ell(fur, 0.15, 0.14, 0.22, 0, 0.21, 0));                  // body
+  inner.add(ell(furL, 0.1, 0.1, 0.09, 0, 0.19, 0.15));            // white chest
   [[-0.075, 0.12], [0.075, 0.12], [-0.085, -0.12], [0.085, -0.12]].forEach(([x, z]) => {
-    inner.add(cyl(0.032, 0.036, 0.15, hm.fur, x, 0.075, z, 12));        // stubby legs
-    inner.add(ell(hm.furLight, 0.04, 0.025, 0.055, x, 0.02, z + 0.015)); // paws
+    const lg = new THREE.Group(); lg.position.set(x, 0.15, z);          // pivots at the hip so the legs can swing
+    lg.add(cyl(0.032, 0.036, 0.15, fur, 0, -0.075, 0, 12));            // stubby legs
+    lg.add(ell(furL, 0.04, 0.025, 0.055, 0, -0.13, 0.015));            // paws
+    inner.add(lg); legs.push(lg);
   });
 
   const head = new THREE.Group(); head.position.set(0, 0.3, 0.17); inner.add(head);
-  head.add(ell(hm.fur, 0.115, 0.1, 0.1, 0, 0.04, 0.03));                 // skull
+  head.add(ell(fur, 0.115, 0.1, 0.1, 0, 0.04, 0.03));                 // skull
   head.add(ell(hm.mask, 0.075, 0.055, 0.05, 0, -0.012, 0.108));          // flat black muzzle
   head.add(ell(hm.mask, 0.04, 0.035, 0.04, -0.05, -0.03, 0.085));        // jowls
   head.add(ell(hm.mask, 0.04, 0.035, 0.04, 0.05, -0.03, 0.085));
@@ -1247,7 +1296,7 @@ function makeDogModel() {
     head.add(ell(hm.nose, 0.014, 0.016, 0.012, s * 0.05, 0.07, 0.118));
     const brow = ell(hm.mask, 0.03, 0.009, 0.014, s * 0.05, 0.103, 0.104); brow.rotation.z = s * 0.25; head.add(brow);
     const ear = new THREE.Group(); ear.position.set(s * 0.07, 0.11, -0.005);   // big bat ears
-    const outer = mesh(new THREE.ConeGeometry(0.05, 0.13, 14), hm.fur, 0, 0.065, 0); outer.scale.z = 0.45;
+    const outer = mesh(new THREE.ConeGeometry(0.05, 0.13, 14), fur, 0, 0.065, 0); outer.scale.z = 0.45;
     const innr = mesh(new THREE.ConeGeometry(0.035, 0.1, 14), hm.pink, 0, 0.055, 0.012); innr.scale.z = 0.4;
     ear.add(outer, innr); ear.rotation.z = -s * 0.28; head.add(ear); ears.push(ear);
   });
@@ -1256,26 +1305,29 @@ function makeDogModel() {
   inner.add(ell(hm.gold, 0.02, 0.02, 0.01, 0, 0.2, 0.2));                // collar tag
 
   const tail = new THREE.Group(); tail.position.set(0, 0.27, -0.2); inner.add(tail);
-  tail.add(ell(hm.fur, 0.022, 0.022, 0.045, 0, 0, -0.03));
+  tail.add(ell(fur, 0.022, 0.022, 0.045, 0, 0, -0.03));
 
+  let barrel = null, muzzle = null, spark = null;
+  if (cannon) {
   // cannon strapped to its back
   const strap = mesh(new THREE.TorusGeometry(0.15, 0.012, 8, 28), hm.collar, 0, 0.21, -0.03);
   strap.scale.y = 0.95; inner.add(strap);
   inner.add(box(0.1, 0.04, 0.12, hm.wood, 0, 0.35, -0.03));              // saddle
   inner.add(cyl(0.026, 0.026, 0.16, hm.barrel, 0, 0.43, -0.03, 12));     // mount post
-  const barrel = new THREE.Group(); barrel.position.set(0, 0.53, -0.05); inner.add(barrel);
+  barrel = new THREE.Group(); barrel.position.set(0, 0.53, -0.05); inner.add(barrel);
   const tubeM = cyl(0.046, 0.06, 0.3, hm.barrel, 0, 0, 0.12, 20); tubeM.rotation.x = Math.PI / 2; barrel.add(tubeM);
   const ringM = mesh(new THREE.TorusGeometry(0.05, 0.011, 8, 20), hm.barrel, 0, 0, 0.27); barrel.add(ringM);
   barrel.add(mesh(new THREE.SphereGeometry(0.048, 14, 10), hm.barrel, 0, 0, -0.04));      // breech knob
   barrel.add(tube([0, 0.06, -0.02], [0.02, 0.105, -0.045], 0.006, mat.fuse));
-  const spark = mesh(new THREE.SphereGeometry(0.02, 10, 8), mat.spark, 0.02, 0.11, -0.045);
+  spark = mesh(new THREE.SphereGeometry(0.02, 10, 8), mat.spark, 0.02, 0.11, -0.045);
   barrel.add(spark);
-  const muzzle = new THREE.Object3D(); muzzle.position.set(0, 0, 0.3); barrel.add(muzzle);
+  muzzle = new THREE.Object3D(); muzzle.position.set(0, 0, 0.3); barrel.add(muzzle);
   barrel.rotation.order = 'YXZ';
+  }
 
   const sh = new THREE.Mesh(shadowGeo, mat.shadow);
   sh.rotation.x = -Math.PI / 2; sh.position.y = 0.004; sh.scale.setScalar(0.28); root.add(sh);
-  return { root, inner, head, ears, tail, barrel, muzzle, spark };
+  return { root, inner, head, ears, tail, legs, barrel, muzzle, spark };
 }
 
 const DOG = Object.assign(makeDogModel(), {
@@ -1570,8 +1622,20 @@ resetHeadsUp();
    so it stays playable even at high speed levels. */
 const LC = CONFIG.lava;
 const LV = { pts: [], u: 0, genX: 0, genS: 0, target: 0, nextTurn: 0, t: 0 };
-const lavaLen = CONFIG.spawnDistance + CONFIG.despawnZ;
-const lavaParams = () => LC.perDifficulty[state.difficulty] || LC.perDifficulty.easy;
+const lavaLen = CONFIG.spawnDistance * CONFIG.lava.scaleMax + CONFIG.despawnZ;
+const LW = () => LC.lavaWidth * state.scaleLV;              // lava width at the current playspace scale
+const LF = () => CONFIG.spawnDistance * state.scaleLV;      // how far ahead the lava reaches
+const _lp = { key: '', P: null };
+function lavaParams() {                                     // the difficulty's numbers, fitted to the playspace
+  const key = state.difficulty + '|' + state.scaleLV;
+  if (_lp.key !== key) {
+    const B = LC.perDifficulty[state.difficulty] || LC.perDifficulty.easy, k = state.scaleLV;
+    const width = B.width * clamp(0.6 + 0.4 * k, 0.8, 1);    // a little narrower in a small playspace, never wider
+    const xMax = Math.max(0, Math.min(B.xMax * k, LW() / 2 - width / 2 - LC.edgeMargin));   // the path always stays inside the lava
+    _lp.key = key; _lp.P = Object.assign({}, B, { width, xMax });
+  }
+  return _lp.P;
+}
 const lavaSEff = (P, speed) => Math.min(P.sMax, P.latMax / Math.max(speed, 0.5));   // slope limit: sideways speed <= latMax
 
 function makeLavaTexture() {
@@ -1641,7 +1705,7 @@ ribbon.frustumCulled = false; ribbon.renderOrder = 2; lavaGroup.add(ribbon);
 const puckLine = new THREE.Mesh(new THREE.PlaneGeometry(LC.lavaWidth, 0.03),
   new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4, depthWrite: false, side: THREE.DoubleSide }));
 puckLine.rotation.x = -Math.PI / 2; puckLine.position.set(0, 0.006, -KC.puckOffset);
-puckLine.renderOrder = 3; puckLine.visible = LC.puckLine; lavaGroup.add(puckLine);
+puckLine.renderOrder = 3; puckLine.visible = LC.puckLine; puckLine.scale.x = state.scaleLV; lavaGroup.add(puckLine);
 
 /* ---- path generator: a random walk on the slope, so the path always bends smoothly ---- */
 function pickLavaTarget(P, speed) {
@@ -1670,12 +1734,12 @@ function addLavaPoint(z) {
   p.z = z; LV.pts.push(p);
 }
 function writeRibbon() {
-  const n = Math.min(LV.pts.length, LV_ROWS), W2 = LC.lavaWidth / 2, tile = LC.tileMetres;
-  const fade = z => clamp((z + CONFIG.spawnDistance) / 1.0, 0, 1) * clamp((CONFIG.despawnZ - z) / 0.5, 0, 1);
+  const n = Math.min(LV.pts.length, LV_ROWS), W2 = LW() / 2, tile = LC.tileMetres, far = LF();
+  const fade = z => clamp((z + far) / 1.0, 0, 1) * clamp((CONFIG.despawnZ - z) / 0.5, 0, 1);
   for (let i = 0; i < n; i++) {
     const p = LV.pts[i], k = 1 / Math.hypot(1, p.s), hw = p.w / 2;
     const nx = k * hw, nz = p.s * k * hw;                      // half-width step, perpendicular to the path
-    const a = clamp((p.z + CONFIG.spawnDistance) / 1.0, 0, 1) * clamp((CONFIG.despawnZ - p.z) / 0.6, 0, 1);
+    const a = clamp((p.z + far) / 1.0, 0, 1) * clamp((CONFIG.despawnZ - p.z) / 0.6, 0, 1);
     const v = p.d / tile;
     for (let side = 0; side < 2; side++) {
       const sg = side === 0 ? 1 : -1, r = 2 * i + side;
@@ -1705,12 +1769,16 @@ function updateLava(dt) {
   while (LV.pts.length > 2 && LV.pts[1].z > CONFIG.despawnZ + LC.ds) LV.pts.shift();    // keep one point past the end
   while (true) {
     const far = LV.pts[LV.pts.length - 1], z = far.z - LC.ds;
-    if (z < -CONFIG.spawnDistance) break;
+    if (z < -LF()) break;
     addLavaPoint(z);
   }
   lavaTex.offset.y = (lavaTex.offset.y + step / LC.tileMetres) % 1;                     // lava drifts along with the path
   lavaMat.opacity = 0.68 + 0.07 * Math.sin(LV.t * 2.3);
   writeRibbon();
+}
+function applyLavaScale() {                                 // PLAYSPACE changed: refit the lava and lay the path out again
+  puckLine.scale.x = state.scaleLV;
+  resetLava();
 }
 function idleLava(dt) { LV.t += dt; lavaMat.opacity = 0.68 + 0.07 * Math.sin(LV.t * 2.3); }
 
@@ -1724,23 +1792,158 @@ function resetLava() {
   LV.pts.push({ x: 0, s: 0, d: 0, w: P.width, z: CONFIG.despawnZ });          // start at your back and lay the path out ahead
   while (true) {
     const z = LV.pts[LV.pts.length - 1].z - LC.ds;
-    if (z < -CONFIG.spawnDistance) break;
+    if (z < -LF()) break;
     addLavaPoint(z);
   }
   writeRibbon();
 }
 resetLava();
 
+/* ============================== DOG ATTACK ============================== */
+/* A static level: nothing slides toward you. Little French bulldogs (about the size of an adult sneaker) wander
+   around inside a rectangle on the floor in front of you, turning at random and sometimes stopping for a sniff,
+   and you stickhandle around them. The rectangle starts DA.startDist in front of you and reaches DA.halfWidth to
+   each side and DA.depth ahead of that (3 ft each by default). The PLAYSPACE buttons scale the whole rectangle,
+   starting distance included, about your feet. The dogs stay the same size. They never overlap each other. */
+const DA = CONFIG.dogAttack;
+const DAS = { dogs: [] };
+const daSpeed = lvl => DA.baseSpeed + DA.speedStep * lvl;
+const daParams = () => DA.perDifficulty[state.difficulty] || DA.perDifficulty.easy;
+const daArea = () => {
+  const k = state.scaleDA;
+  return { x0: -DA.halfWidth * k, x1: DA.halfWidth * k, zNear: -DA.startDist * k, zFar: -(DA.startDist + DA.depth) * k };
+};
+const wrapA = a => Math.atan2(Math.sin(a), Math.cos(a));
+// a small playspace can't hold as many dogs: roughly one dog per sepDist x sepDist of floor
+const daDogCount = () => Math.max(1, Math.min(daParams().dogs,
+  Math.floor(2 * DA.halfWidth * DA.depth * state.scaleDA * state.scaleDA / (DA.sepDist * DA.sepDist))));
+
+const daGroup = new THREE.Group(); daGroup.visible = false; world.add(daGroup);
+{ // floor marking, built at 100% and scaled with the group
+  const cz = -(DA.startDist + DA.depth / 2), W = DA.halfWidth, T = 0.025;
+  const fl = new THREE.Mesh(new THREE.PlaneGeometry(W * 2, DA.depth),
+    new THREE.MeshBasicMaterial({ color: 0x59d98e, transparent: true, opacity: 0.14, depthWrite: false, side: THREE.DoubleSide }));
+  fl.rotation.x = -Math.PI / 2; fl.position.set(0, 0.002, cz); daGroup.add(fl);
+  const bm = new THREE.MeshBasicMaterial({ color: 0xc8ffd9, transparent: true, opacity: 0.7, depthWrite: false, side: THREE.DoubleSide });
+  [[0, cz - DA.depth / 2, W * 2 + T, T], [0, cz + DA.depth / 2, W * 2 + T, T], [-W, cz, T, DA.depth], [W, cz, T, DA.depth]].forEach(([x, z, w, d]) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), bm);
+    m.rotation.x = -Math.PI / 2; m.position.set(x, 0.003, z); daGroup.add(m);
+  });
+}
+const daFurs = [[0xc99d68, 0xf0e6d6], [0x6b4a32, 0xe8dccb], [0xe9dcc3, 0xffffff], [0x2c2c30, 0xdedede], [0x7f8895, 0xe6e6e6], [0xa8774a, 0xf5efe3]]
+  .map(([a, b]) => ({ fur: std(a, { roughness: 0.9 }), furLight: std(b, { roughness: 0.9 }) }));
+
+function clearDogAttack() { DAS.dogs.forEach(d => world.remove(d.root)); DAS.dogs.length = 0; }
+function resetDogAttack() {
+  clearDogAttack();
+  const on = state.game === 'dogattack';
+  daGroup.visible = on; daGroup.scale.setScalar(state.scaleDA);
+  if (!on) return;
+  const A = daArea(), P = daParams();
+  for (let i = 0; i < daDogCount(); i++) {
+    const pal = daFurs[i % daFurs.length];
+    const m = makeDogModel({ cannon: false, fur: pal.fur, furLight: pal.furLight });
+    m.root.scale.setScalar(DA.dogScale); world.add(m.root);
+    let x = 0, z = 0;
+    for (let t = 0; t < 40; t++) {                          // spread them out
+      x = lerp(A.x0 + 0.1, A.x1 - 0.1, Math.random()); z = lerp(A.zNear - 0.1, A.zFar + 0.1, Math.random());
+      if (DAS.dogs.every(o => Math.hypot(o.x - x, o.z - z) > DA.sepDist)) break;
+    }
+    const h = Math.random() * Math.PI * 2;
+    DAS.dogs.push(Object.assign(m, { x, z, h, target: h, v: 0, speedK: 1, timer: Math.random() * P.turnMax, pause: 0, phase: Math.random() * 20, gait: Math.random() * 6 }));
+    m.root.position.set(x, 0, z); m.root.rotation.y = h;
+  }
+}
+function applyDogScale(old) {                               // the dogs keep their place relative to the area
+  const r = state.scaleDA / old;
+  if (daDogCount() !== DAS.dogs.length) { resetDogAttack(); return; }     // different number of dogs fits: start them again
+  daGroup.scale.setScalar(state.scaleDA);
+  DAS.dogs.forEach(d => { d.x *= r; d.z *= r; });
+}
+function updateDogAttack(dt, active) {
+  const A = daArea(), P = daParams(), spd = daSpeed(state.levelDA), ds = DAS.dogs;
+  const margin = 0.22, minSep = DA.sepDist * 0.92;
+  ds.forEach(d => {
+    d.phase += dt;
+    let want = d.h, diff = 0;
+    if (active) {
+      d.timer -= dt;
+      if (d.pause > 0) { d.pause -= dt; if (d.pause <= 0) d.timer = 0; }
+      else if (d.timer <= 0) {                             // pick a new random direction
+        d.target = d.h + (Math.random() * 2 - 1) * Math.PI * (Math.random() < P.bigTurn ? 1 : 0.4);
+        d.timer = P.turnMin + Math.random() * (P.turnMax - P.turnMin);
+        d.speedK = 0.7 + Math.random() * 0.6;
+        if (Math.random() < P.pause) d.pause = 0.5 + Math.random() * 1.0;     // stop for a sniff
+      }
+      let vx = Math.sin(d.target), vz = Math.cos(d.target);
+      if (d.x < A.x0 + margin) vx += (A.x0 + margin - d.x) / margin * 2.5;     // turn away from the edges
+      if (d.x > A.x1 - margin) vx -= (d.x - (A.x1 - margin)) / margin * 2.5;
+      if (d.z > A.zNear - margin) vz -= (d.z - (A.zNear - margin)) / margin * 2.5;
+      if (d.z < A.zFar + margin) vz += (A.zFar + margin - d.z) / margin * 2.5;
+      ds.forEach(o => {                                    // and from each other
+        if (o === d) return;
+        const dx = d.x - o.x, dz = d.z - o.z, dist = Math.hypot(dx, dz);
+        if (dist < DA.sepDist && dist > 1e-6) { const f = (DA.sepDist - dist) / DA.sepDist * 3; vx += dx / dist * f; vz += dz / dist * f; }
+      });
+      want = Math.atan2(vx, vz);
+      diff = wrapA(want - d.h);
+      d.h += clamp(diff, -DA.turnRate * dt, DA.turnRate * dt);
+    }
+    const tv = active && d.pause <= 0 ? spd * d.speedK * (0.4 + 0.6 * Math.max(0, Math.cos(diff))) : 0;
+    d.v += (tv - d.v) * (1 - Math.exp(-6 * dt));
+    d.x += Math.sin(d.h) * d.v * dt; d.z += Math.cos(d.h) * d.v * dt;
+    const ix = 0.04;                                       // hard stop at the border, then turn back inside
+    if (d.x < A.x0 + ix || d.x > A.x1 - ix || d.z > A.zNear - ix || d.z < A.zFar + ix) {
+      d.x = clamp(d.x, A.x0 + ix, A.x1 - ix); d.z = clamp(d.z, A.zFar + ix, A.zNear - ix);
+      d.target = Math.atan2((A.x0 + A.x1) / 2 - d.x, (A.zNear + A.zFar) / 2 - d.z) + (Math.random() - 0.5);
+      d.timer = 0.6;
+    }
+  });
+  for (let it = 0; it < 4; it++) {                         // never overlap: push apart a few passes, keeping everyone inside the border
+    for (let i = 0; i < ds.length; i++) for (let j = i + 1; j < ds.length; j++) {
+      const a = ds[i], b = ds[j], dx = b.x - a.x, dz = b.z - a.z, dist = Math.hypot(dx, dz);
+      if (dist < minSep) {
+        const nx = dist > 1e-6 ? dx / dist : 1, nz = dist > 1e-6 ? dz / dist : 0, push = (minSep - dist) / 2;
+        a.x -= nx * push; a.z -= nz * push; b.x += nx * push; b.z += nz * push;
+      }
+    }
+    ds.forEach(d => { d.x = clamp(d.x, A.x0 + 0.04, A.x1 - 0.04); d.z = clamp(d.z, A.zFar + 0.04, A.zNear - 0.04); });
+  }
+  ds.forEach(d => {                                        // pose the model
+    d.x = clamp(d.x, A.x0 + 0.04, A.x1 - 0.04); d.z = clamp(d.z, A.zFar + 0.04, A.zNear - 0.04);   // separation must not push a dog out
+    const mv = clamp(d.v / 0.45, 0, 1);
+    d.gait += dt * (7 + d.v * 16);
+    d.root.position.set(d.x, 0, d.z); d.root.rotation.y = d.h;
+    const sw = Math.sin(d.gait) * 0.7 * mv;
+    d.legs[0].rotation.x = sw; d.legs[3].rotation.x = sw; d.legs[1].rotation.x = -sw; d.legs[2].rotation.x = -sw;
+    d.inner.position.y = Math.abs(Math.sin(d.gait)) * 0.014 * mv;
+    d.inner.rotation.z = Math.sin(d.gait) * 0.05 * mv;
+    d.head.rotation.x = d.pause > 0 ? 0.4 + 0.1 * Math.sin(d.phase * 9) : 0.05 * Math.sin(d.gait * 2) * mv;
+    d.head.rotation.z = Math.sin(d.phase * 0.9) * 0.07;
+    d.tail.rotation.y = Math.sin(d.phase * (9 + 8 * mv)) * 0.6;
+    d.ears.forEach((e, i) => { e.rotation.x = Math.sin(d.phase * 3 + i) * 0.08; });
+  });
+}
+resetDogAttack();
+
 /* ============================== UI PANEL ============================== */
-const CW = 1024, CH = 704;
-const canvas = document.createElement('canvas'); canvas.width = CW; canvas.height = CH;
+const CW = 1024, CH = 704;                       // the layout is designed on this grid
+const UI_SCALE = CONFIG.panelScale;              // the panel is drawn this much bigger, but the text stays the same size in the world
+const canvas = document.createElement('canvas'); canvas.width = Math.round(CW * UI_SCALE); canvas.height = Math.round(CH * UI_SCALE);
 const ctx = canvas.getContext('2d');
+{ const fillText = ctx.fillText.bind(ctx);        // shapes scale with the panel; text is drawn smaller to cancel it out
+  ctx.fillText = (t, x, y) => {
+    const f = ctx.font;
+    ctx.font = f.replace(/(\d+(?:\.\d+)?)px/, (m, n) => (n / UI_SCALE) + 'px');
+    fillText(t, x, y); ctx.font = f;
+  };
+}
 const panelTex = new THREE.CanvasTexture(canvas);
 panelTex.colorSpace = THREE.SRGBColorSpace;
 panelTex.anisotropy = 4;
 
 const panel = new THREE.Mesh(
-  new THREE.PlaneGeometry(CONFIG.panelWidth, CONFIG.panelWidth * CH / CW),
+  new THREE.PlaneGeometry(CONFIG.panelWidth * UI_SCALE, CONFIG.panelWidth * UI_SCALE * CH / CW),
   new THREE.MeshBasicMaterial({ map: panelTex, transparent: true, toneMapped: false, side: THREE.DoubleSide })
 );
 panel.rotation.order = 'YXZ';                  // turn to face you first, then tilt
@@ -1749,6 +1952,7 @@ world.add(panel);
 const treadmillOnly = () => state.game === 'treadmill';
 const insanityOnly = () => state.game === 'insanity';
 const headsupOnly = () => state.game === 'headsup';
+const areaGame = () => state.game === 'lava' || state.game === 'dogattack';
 const hasDifficulty = () => state.game === 'treadmill' || state.game === 'keepaway' || state.game === 'lava';
 const buttons = [
   { id: 'gameprev', x: 40,  y: 62,  w: 120, h: 62, label: '◀' },
@@ -1760,10 +1964,13 @@ const buttons = [
       label: n + ' LANES', sel: () => state.lanes === n, show: treadmillOnly })),
   { id: 'densdown', x: 215, y: 372, w: 120, h: 66, label: '−', show: insanityOnly },
   { id: 'densup',   x: 864, y: 372, w: 120, h: 66, label: '+', show: insanityOnly },
+  { id: 'areadown', x: 215, y: 372, w: 120, h: 66, label: '−', show: areaGame },
+  { id: 'areaup',   x: 864, y: 372, w: 120, h: 66, label: '+', show: areaGame },
   { id: 'shotsdown', x: 215, y: 372, w: 120, h: 66, label: '−', show: headsupOnly },
   { id: 'shotsup',   x: 864, y: 372, w: 120, h: 66, label: '+', show: headsupOnly },
   ...CONFIG.difficulties.map((d, i) => ({ id: 'diff' + d, x: 215 + i * 194, y: 454, w: 184, h: 66,
-      label: () => state.game === 'keepaway' ? d.toUpperCase() + ' (' + KC.perDifficulty[d].count + ')' : d.toUpperCase(),
+      label: () => state.game === 'keepaway' ? d.toUpperCase() + ' (' + KC.perDifficulty[d].count + ')'
+        : state.game === 'dogattack' ? d.toUpperCase() + ' (' + DA.perDifficulty[d].dogs + ')' : d.toUpperCase(),
       sel: () => state.difficulty === d, show: hasDifficulty })),
   { id: 'reset',    x: 40,  y: 540, w: 300, h: 80,  label: 'RESET' },
   { id: 'menuhome', x: 356, y: 540, w: 312, h: 80,  label: 'MENU HOME' },
@@ -1786,7 +1993,17 @@ const fmtTime = t => {
 
 let lastTimerText = '';
 function drawPanel() {
-  const ka = state.game === 'keepaway', ins = state.game === 'insanity', hu = state.game === 'headsup', lv = state.game === 'lava';
+  ctx.setTransform(UI_SCALE, 0, 0, UI_SCALE, 0, 0);
+  const ka = state.game === 'keepaway', ins = state.game === 'insanity', hu = state.game === 'headsup', lv = state.game === 'lava', da = state.game === 'dogattack';
+  const areaRow = (sub) => {                                   // PLAYSPACE row between the − and + buttons
+    ctx.textAlign = 'left'; ctx.fillStyle = '#9fb3d1'; ctx.font = '700 25px system-ui, sans-serif';
+    ctx.fillText('AREA', 40, 405);
+    ctx.fillStyle = '#1a2740'; rr(347, 372, 505, 66, 20); ctx.fill();
+    ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.font = '700 28px system-ui, sans-serif';
+    ctx.fillText('PLAYSPACE  ' + Math.round((da ? state.scaleDA : state.scaleLV) * 100) + '%', 347 + 505 / 2, 393);
+    ctx.fillStyle = '#9fb3d1'; ctx.font = '600 19px system-ui, sans-serif';
+    ctx.fillText(sub, 347 + 505 / 2, 423);
+  };
   ctx.clearRect(0, 0, CW, CH);
   ctx.fillStyle = 'rgba(10,18,34,0.9)';
   rr(0, 0, CW, CH, 36); ctx.fill();
@@ -1819,6 +2036,7 @@ function drawPanel() {
     : ins ? 'Density ' + state.density + '  ·  Passed ' + state.passed
     : hu ? 'Dodged ' + state.dodged + '  ·  Hit ' + state.hits
     : lv ? 'Distance ' + Math.floor(state.distance) + ' m'
+    : da ? 'Dogs ' + daDogCount()
     : 'Passed ' + state.passed;
   ctx.fillText('Level ' + curLevel() + '  ·  ' + shownSpeed().toFixed(1) + ' m/s  ·  ' + extra, CW / 2, 236);
 
@@ -1849,11 +2067,10 @@ function drawPanel() {
     ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.font = '700 26px system-ui, sans-serif';
     ctx.fillText('ONE WIDE LANE  ·  CLUTTERED  ·  USE YOUR HANDS', 215 + 769 / 2, 489);
   } else if (lv) {
-    ctx.font = '700 25px system-ui, sans-serif';
-    ctx.fillText('PATH', 40, 405);
-    ctx.fillStyle = '#1a2740'; rr(215, 372, 769, 66, 20); ctx.fill();
-    ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.font = '700 26px system-ui, sans-serif';
-    ctx.fillText('KEEP YOUR PUCK ON THE PATH  ·  ' + lavaParams().width.toFixed(2) + ' m WIDE', 215 + 769 / 2, 407);
+    areaRow((LC.lavaWidth * state.scaleLV).toFixed(1) + ' m (' + (LC.lavaWidth * state.scaleLV / 0.3048).toFixed(0) + ' ft) wide  ·  path ' + lavaParams().width.toFixed(2) + ' m');
+  } else if (da) {
+    const k = state.scaleDA, ft = m => (m / 0.3048).toFixed(1);
+    areaRow(ft(2 * DA.halfWidth * k) + ' × ' + ft(DA.depth * k) + ' ft, starts ' + ft(DA.startDist * k) + ' ft out');
   } else if (hu) {
     ctx.font = '700 25px system-ui, sans-serif';
     ctx.fillText('SHOTS', 40, 405);
@@ -1900,7 +2117,7 @@ function drawPanel() {
     rr(b.x, b.y, b.w, b.h, 20); ctx.fill();
     if (sel && !hov) { ctx.strokeStyle = '#4cc9f0'; ctx.lineWidth = 4; rr(b.x, b.y, b.w, b.h, 20); ctx.stroke(); }
     ctx.fillStyle = hov ? '#0b1220' : '#ffffff';
-    const fs = b.id === 'toggle' ? 62 : b.id.startsWith('game') ? 34 : (b.id.startsWith('dens') || b.id.startsWith('shots')) ? 44
+    const fs = b.id === 'toggle' ? 62 : b.id.startsWith('game') ? 34 : (b.id.startsWith('dens') || b.id.startsWith('shots') || b.id.startsWith('area')) ? 44
       : label.length > 9 ? 26 : b.h <= 70 ? 30 : 32;
     ctx.font = (b.id === 'toggle' ? '800 ' : '700 ') + fs + 'px system-ui, sans-serif';
     ctx.fillText(label, b.x + b.w / 2, b.y + b.h / 2 + 2);
@@ -1918,6 +2135,7 @@ function resetRun() {
   resetInsanity();
   resetHeadsUp();
   resetLava();
+  resetDogAttack();
   lastTimerText = '';
 }
 
@@ -1946,6 +2164,7 @@ function pressButton(id) {
     if (d !== state.difficulty) {
       state.difficulty = d; resetPro();
       if (state.game === 'keepaway' && state.mode !== 'idle') spawnDefenders();   // new defender count
+      if (state.game === 'dogattack') resetDogAttack();                           // new number of dogs
       saveSettings();
     }
   } else {
@@ -1962,6 +2181,7 @@ function pressButton(id) {
         else if (state.game === 'insanity') state.levelIN = clamp(state.levelIN + delta, CONFIG.minLevel, CONFIG.maxLevel);
         else if (state.game === 'headsup') state.levelHU = clamp(state.levelHU + delta, CONFIG.minLevel, CONFIG.maxLevel);
         else if (state.game === 'lava') state.levelLV = clamp(state.levelLV + delta, CONFIG.minLevel, CONFIG.maxLevel);
+        else if (state.game === 'dogattack') state.levelDA = clamp(state.levelDA + delta, CONFIG.minLevel, CONFIG.maxLevel);
         else state.level = clamp(state.level + delta, CONFIG.minLevel, CONFIG.maxLevel);
         saveSettings();
         break;
@@ -1971,6 +2191,20 @@ function pressButton(id) {
         state.density = clamp(state.density + (id === 'densup' ? 1 : -1), 1, 10);
         saveSettings();
         break;
+      case 'areadown':
+      case 'areaup': {                                  // scale the whole playspace
+        const up = id === 'areaup' ? 1 : -1;
+        if (state.game === 'lava') {
+          state.scaleLV = Math.round(clamp(state.scaleLV + up * 0.1, LC.scaleMin, LC.scaleMax) * 10) / 10;
+          applyLavaScale();
+        } else if (state.game === 'dogattack') {
+          const old = state.scaleDA;
+          state.scaleDA = Math.round(clamp(old + up * 0.1, DA.scaleMin, DA.scaleMax) * 10) / 10;
+          applyDogScale(old);
+        }
+        saveSettings();
+        break;
+      }
       case 'shotsdown':
       case 'shotsup':
         state.shots = clamp(state.shots + (id === 'shotsup' ? 1 : -1), 1, 10);
@@ -2116,11 +2350,13 @@ renderer.setAnimationLoop(() => {
     else if (state.game === 'keepaway') updateKeepAway(dt);
     else if (state.game === 'headsup') updateHeadsUp(dt);
     else if (state.game === 'lava') updateLava(dt);
+    else if (state.game === 'dogattack') updateDogAttack(dt, true);
     else updateInsanity(dt);
 
     const t = fmtTime(state.elapsed) + '|' + state.passed + '|' + state.attacks + '|' + state.hits + '|' + state.dodged + '|' + Math.floor(state.distance);
     if (t !== lastTimerText) { lastTimerText = t; drawPanel(); }
-  } else if (state.mode === 'idle' && state.game === 'headsup') idleHeadsUp(dt);   // dog wags its tail while you pick settings
+  } else if (state.mode === 'idle' && state.game === 'dogattack') updateDogAttack(dt, false);   // dogs stand and wag until you start
+  else if (state.mode === 'idle' && state.game === 'headsup') idleHeadsUp(dt);   // dog wags its tail while you pick settings
   else if (state.game === 'lava') idleLava(dt);   // lava shimmers
   updateTint(dt);
 
