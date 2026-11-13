@@ -13,6 +13,8 @@ Use the ◀ ▶ arrows at the top of the floating panel to switch modes. Each mo
 | **Endless Object Treadmill** (default) | Reading objects early and stickhandling around them across several lanes. |
 | **Keep Away** | Protecting the puck from opposing defencemen who skate around you and attack. |
 | **Insanity** | Toe drags and tight, fancy hands through dense clutter in one wide lane. |
+| **Heads Up!** | Stickhandling a wiggling zig-zag training aid while ducking cannonballs from a French bulldog. |
+| **The Floor Is Lava** | Keeping your puck on a winding path that slides toward you across a lane of lava. |
 
 ### Endless Object Treadmill
 
@@ -56,6 +58,34 @@ One lane, as wide as three treadmill lanes (1.65 m), packed with objects of ever
 - **Always passable:** every new object is checked so that a route through the lane still exists. It can twist and turn, and at the highest densities it is tight.
 - **Speed:** levels 1 to 10, the same speeds as the treadmill.
 
+### Heads Up!
+
+An endless zig-zag stickhandling aid slides down the middle lane toward you: black pods joined by rods, like a real training aid. Its shape slowly breathes between the sharp zig-zag from the product photo and almost dead straight, with a small ripple from pod to pod, so you keep adjusting your hands.
+
+At the far end of the lane a French bulldog with a cannon strapped to its back wanders a little left, right and back and forth, with the odd hop, wagging its tail and twitching its ears. Every so often it plants its feet, barks, and the fuse on the cannon glows while the barrel swings to your head. Then it fires. Duck under the ball while you keep stickhandling.
+
+- **Hit detection:** the ball is aimed at your head height (measured when you enter or press RECENTER, so recenter while standing normally). A ball that passes within about 27 cm of the headset counts as a hit, so duck roughly 30 cm. A hit tints your view red for about a second.
+- **Warning:** each shot is telegraphed by a bark and a glowing fuse, and the warning gets shorter at higher speed levels.
+- **Speed 1 to 10:** sets how fast the training aid slides toward you and how fast the cannonballs fly (3.1 m/s at level 1, 5.8 m/s at level 10).
+- **Shots 1 to 10:** the shot volume. Level 1 is a shot about every 5 s. Level 10 is a shot about every 1.4 s, and from level 5 up the dog sometimes fires bursts of 2 or 3 balls.
+- **Score:** the panel counts balls you dodged and balls that hit you.
+- **Sound:** a synthesized bark, cannon boom and thud. Turn it off with `headsUp.sound`.
+
+### The Floor Is Lava
+
+One continuous lane of glowing lava, 3.2 m wide, with a safe path winding through it. The path slides toward you at the chosen speed, so you keep stickhandling your real puck sideways to stay on it while it bends left and right. The path is 0.85 to 1.1 m wide depending on difficulty, which leaves room for real stickhandling. Lava drifts along with it, and the path has bright edges and a dashed centre line so you can feel the speed.
+
+A thin white line across the lane marks where the game assumes your real puck is (the same 0.55 m in front of you that Keep Away uses). Watch the path where it crosses that line. The game can't see your puck, so you judge whether you stayed on the path yourself, like the other modes. The panel counts the distance you have travelled along the path.
+
+| Difficulty | Path |
+| --- | --- |
+| **Easy** | Straight-ish. Long, gentle drifts left and right about half a metre either way, so you still need to move your hands. The widest path (1.10 m). |
+| **Medium** | Clear, regular bends about 0.65 m either way, with some S-bends (1.00 m wide). |
+| **Hard** | Frequent, sharper bends up to 0.8 m either way and plenty of S-bends (0.92 m wide). |
+| **Pro** | Lots of turns and twists, up to 0.9 m either way, often swinging straight into the opposite direction. The narrowest path (0.85 m). |
+
+Speed uses levels 1 to 10, the same speeds as the treadmill (1.0 to 3.7 m/s). The path is shaped so it never bends tighter than its own width, and the sideways speed it asks of your hands is capped for each difficulty. At high speed levels the bends are therefore gentler but come much more often.
+
 ## Objects
 
 Each object is built from Three.js shapes, so there are no external assets.
@@ -77,7 +107,7 @@ The Treadmill uses all six. Insanity uses these six plus eight bigger, oddly sha
 - **Bucket of pucks**
 - **Helmet**
 
-Keep Away uses full-size defencemen in red jerseys instead.
+Keep Away uses full-size defencemen in red jerseys instead. Heads Up! uses a zig-zag aid of black pods and rods, a French bulldog and a cannon.
 
 ## Control panel
 
@@ -89,10 +119,14 @@ A floating panel sits about 1 m in front of you near eye level. Aim a controller
 | **START / PAUSE / RESUME** | Starts, freezes or continues the session. Everything freezes while paused. |
 | **− SPEED / SPEED +** | Sets the speed level, 1 to 10, for the current mode. |
 | **3 / 4 / 5 LANES** | Treadmill only: number of lanes. |
-| **EASY / MEDIUM / HARD / PRO** | Treadmill and Keep Away: layout or defender count. |
+| **EASY / MEDIUM / HARD / PRO** | Treadmill, Keep Away and The Floor Is Lava: layout, defender count or how twisty the path is. |
 | **DENSITY − / +** | Insanity only: clutter level, 1 to 10. |
+| **SHOTS − / +** | Heads Up! only: cannon shot volume, 1 to 10. |
 | **RESET** | Stops the session and clears the timer, counts and floor. |
-| **RECENTER** | Re-anchors the play area and panel to where you are standing and facing. |
+| **MENU HOME** | Puts the panel back in its default spot after you have dragged it. |
+| **RECENTER** | Re-anchors the play area to where you are standing and facing. The panel keeps its position relative to you, including a spot you dragged it to. |
+
+**Moving the panel:** aim at the empty background of the panel (not a button), hold the trigger or pinch, and move your hand. The panel follows your ray, always turns to face you, and the border turns yellow while you are moving it. Let go to drop it, for example down by your feet or off to the side so it is out of the way of the cannon in Heads Up!. It stays within about 3 m of you, and the spot is saved on the headset between sessions. Presses that start on a button still work as normal buttons.
 
 The panel also shows a timer, the level and speed, and either how many objects have passed you or how many attacks have been made. Your last mode, lanes, difficulty, speed levels and density are saved on the headset between sessions.
 
@@ -102,6 +136,8 @@ The panel also shows a timer, the level and speed, and either how many objects h
 | --- | --- | --- |
 | **Treadmill / Insanity** | 1.0 m/s | 3.7 m/s |
 | **Keep Away** (lunge speed) | 1.4 m/s | 3.7 m/s |
+| **Heads Up!** (training aid) | 1.0 m/s | 3.7 m/s |
+| **The Floor Is Lava** (path) | 1.0 m/s | 3.7 m/s |
 
 ## Requirements
 
@@ -155,13 +191,21 @@ Everything adjustable is in the `CONFIG` object near the top of the script in `i
 | `keepAway.defenderScale` | How big the defenders look (1.0 is full size). |
 | `keepAway.puckOffset` | Where the game assumes your puck is in front of you. |
 | `keepAway.maxRadius`, `attackGap`, `perDifficulty` | Zone size, spacing between attacks, and each difficulty's defender count and aggression. |
+| `headsUp.aidSpacing`, `aidAmplitude`, `aidPeriod`, `aidPhasePerPod` | Heads Up!: gap between pods, how far they swing sideways at full zig-zag (0 is straight), seconds per breathing cycle, and how much the shape ripples. |
+| `headsUp.dogDistance`, `dogScale`, `dogRangeX`, `dogRangeZ`, `dogSpeed` | Heads Up!: how far away the bulldog is, how big it looks, and how much and how fast it wanders. |
+| `headsUp.ballRadius`, `ballSpeedBase`, `ballSpeedStep`, `arcHeight`, `hitRadius`, `aimNoise` | Heads Up!: cannonball size, speed, how much it lobs, how close counts as a hit, and shot inaccuracy. |
+| `lava.lavaWidth`, `startStraight`, `puckLine` | The Floor Is Lava: width of the lava, how long the path is straight at the start, and whether the puck line is shown. |
+| `lava.perDifficulty` | The Floor Is Lava: for each difficulty, `width` of the path, `sMax` (steepest bend), `turnMin` / `turnMax` (distance between bends), `aMax` (how sharp a bend can be), `xMax` (how far it wanders) and `latMax` (the most sideways speed it can ask of you). |
+| `headsUp.telegraphBase`, `intervalMax`, `intervalMin`, `burstChanceMax` | Heads Up!: warning time before a shot, time between shots at shots 1 and 10, and how often bursts happen. |
+| `headsUp.tintPeak`, `tintFade` | Heads Up!: strength of the red hit tint (0 to 1) and how long it takes to fade. |
 | `panelDistance`, `panelWidth`, `panelHeightOffset` | Size and position of the control panel. |
 
 ## Troubleshooting
 
 - **"WebXR not available":** open the page over HTTPS in the Meta Quest Browser, not a desktop browser.
 - **No passthrough:** make sure passthrough is enabled in your Quest settings, and enter with the button on the page.
-- **Panel or play area in the wrong place:** press **RECENTER** while standing where you want to train.
+- **Panel or play area in the wrong place:** press **RECENTER** while standing where you want to train. If you dragged the panel somewhere awkward, press **MENU HOME**.
+- **Panel in the way:** grab its background and drag it somewhere else.
 - **Panel too high or low:** adjust `panelHeightOffset` in `CONFIG`.
 - **Can't press panel buttons:** aim the controller or pinch ray at the button until it highlights, then pull the trigger or pinch.
 - **Changes don't show up:** the Quest Browser caches pages heavily. Check the small `build` label on the start screen and at the bottom of the panel to see which copy you have, then clear the site data in the browser settings and reload.
