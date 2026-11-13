@@ -38,7 +38,7 @@
 <script type="module">
 import * as THREE from 'three';
 
-const BUILD = 'headsup-1';   // shown on the start screen and panel so you can tell which copy is loaded
+const BUILD = 'headsup-2';   // shown on the start screen and panel so you can tell which copy is loaded
 document.getElementById('build').textContent = 'build ' + BUILD;
 
 /* ============================== CONFIG ============================== */
@@ -151,6 +151,8 @@ const state = {
   hits: 0,                     // Heads Up! cannonballs that hit you
   dodged: 0,                   // Heads Up! cannonballs you ducked
   eyeHeight: 1.6,              // standing head height, measured on (re)center
+  panelPose: null,             // where you dragged the menu to ({x,y,z} in play-area coordinates), or null = default spot
+  dragging: false,
   attacks: 0,
   elapsed: 0,
   passed: 0,
@@ -206,6 +208,7 @@ const SAVE_KEY = 'stickMR.v2';
     if (Number.isInteger(s.levelHU)) state.levelHU = clamp(s.levelHU, CONFIG.minLevel, CONFIG.maxLevel);
     if (Number.isInteger(s.shots)) state.shots = clamp(s.shots, 1, 10);
     if (GAMES.some(g => g.id === s.game)) state.game = s.game;
+    if (s.panel && [s.panel.x, s.panel.y, s.panel.z].every(Number.isFinite)) state.panelPose = { x: s.panel.x, y: s.panel.y, z: s.panel.z };
   } catch (e) {}
   resetPro();
 })();
@@ -213,7 +216,7 @@ function saveSettings() {
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(
     { lanes: state.lanes, difficulty: state.difficulty, level: state.level,
       levelKA: state.levelKA, levelIN: state.levelIN, density: state.density,
-      levelHU: state.levelHU, shots: state.shots, game: state.game })); } catch (e) {}
+      levelHU: state.levelHU, shots: state.shots, game: state.game, panel: state.panelPose })); } catch (e) {}
 }
 
 /* ============================== THREE SETUP ============================== */
@@ -1344,6 +1347,7 @@ const panel = new THREE.Mesh(
   new THREE.PlaneGeometry(CONFIG.panelWidth, CONFIG.panelWidth * CH / CW),
   new THREE.MeshBasicMaterial({ map: panelTex, transparent: true, toneMapped: false, side: THREE.DoubleSide })
 );
+panel.rotation.order = 'YXZ';                  // turn to face you first, then tilt
 world.add(panel);
 
 const treadmillOnly = () => state.game === 'treadmill';
@@ -1366,6 +1370,7 @@ const buttons = [
       label: () => state.game === 'keepaway' ? d.toUpperCase() + ' (' + KC.perDifficulty[d].count + ')' : d.toUpperCase(),
       sel: () => state.difficulty === d, show: hasDifficulty })),
   { id: 'reset',    x: 40,  y: 540, w: 300, h: 80,  label: 'RESET' },
+  { id: 'menuhome', x: 356, y: 540, w: 312, h: 80,  label: 'MENU HOME' },
   { id: 'recenter', x: 684, y: 540, w: 300, h: 80,  label: 'RECENTER' }
 ];
 
@@ -1389,12 +1394,17 @@ function drawPanel() {
   ctx.clearRect(0, 0, CW, CH);
   ctx.fillStyle = 'rgba(10,18,34,0.9)';
   rr(0, 0, CW, CH, 36); ctx.fill();
-  ctx.strokeStyle = 'rgba(76,201,240,0.8)'; ctx.lineWidth = 5;
+  ctx.strokeStyle = state.dragging ? 'rgba(255,209,102,0.95)' : 'rgba(76,201,240,0.8)'; ctx.lineWidth = state.dragging ? 8 : 5;
   rr(3, 3, CW - 6, CH - 6, 34); ctx.stroke();
 
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#9fb3d1'; ctx.font = '600 28px system-ui, sans-serif';
   ctx.fillText('SICKMITTS VR', CW / 2, 32);
+  ctx.fillStyle = state.dragging ? '#ffd166' : '#5f7391';                  // grip dots + hint: the whole background is a handle
+  for (let gx = 0; gx < 3; gx++) for (let gy = 0; gy < 2; gy++) { ctx.beginPath(); ctx.arc(52 + gx * 12, 25 + gy * 12, 3.5, 0, Math.PI * 2); ctx.fill(); }
+  ctx.textAlign = 'left'; ctx.font = '600 19px system-ui, sans-serif';
+  ctx.fillText(state.dragging ? 'MOVING…' : 'GRAB THE BACKGROUND TO MOVE', 98, 32);
+  ctx.textAlign = 'center';
 
   // game selector: current game name between the arrow buttons
   const gi = Math.max(0, GAMES.findIndex(g => g.id === state.game));
@@ -1562,6 +1572,10 @@ function pressButton(id) {
         saveSettings();
         break;
       case 'reset': resetRun(); break;
+      case 'menuhome':                                  // put the menu back in its default spot
+        state.panelPose = null; saveSettings();
+        if (renderer.xr.isPresenting) { const pl = playerLocal(); placePanel(pl.y); }
+        break;
       case 'recenter': state.needsPlace = true; break;
     }
   }
@@ -1578,10 +1592,62 @@ function pickButton(ctrl) {
   raycaster.ray.origin.setFromMatrixPosition(ctrl.matrixWorld);
   raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tmpMat);
   const hit = raycaster.intersectObject(panel, false)[0];
-  if (!hit || !hit.uv) return { id: null, dist: null };
+  if (!hit || !hit.uv) return { id: null, dist: null, onPanel: false };
   const cx = hit.uv.x * CW, cy = (1 - hit.uv.y) * CH;
   const b = buttons.find(b => (!b.show || b.show()) && cx >= b.x && cx <= b.x + b.w && cy >= b.y && cy <= b.y + b.h);
-  return { id: b ? b.id : null, dist: hit.distance };
+  return { id: b ? b.id : null, dist: hit.distance, onPanel: true, point: hit.point };
+}
+
+/* ---------- drag the menu: press the trigger (or pinch) on the panel background and move it ---------- */
+const drag = { c: null, dist: 1, off: new THREE.Vector3() };
+const _ro = new THREE.Vector3(), _re = new THREE.Vector3(), _rd = new THREE.Vector3();
+function rayLocal(ctrl) {                       // controller ray in play-area coordinates: origin _ro, unit direction _rd
+  tmpMat.identity().extractRotation(ctrl.matrixWorld);
+  _ro.setFromMatrixPosition(ctrl.matrixWorld);
+  _rd.set(0, 0, -1).applyMatrix4(tmpMat);
+  _re.copy(_ro).add(_rd);
+  world.worldToLocal(_ro); world.worldToLocal(_re);
+  _rd.copy(_re).sub(_ro);
+}
+function facePanel(hx, hy, hz) {                // turn the panel toward your head
+  const p = panel.position, dx = hx - p.x, dz = hz - p.z, h = Math.hypot(dx, dz) || 1e-6;
+  panel.rotation.set(clamp(-Math.atan2(hy - p.y, h) - 0.1, -0.9, 0.5), Math.atan2(dx, dz), 0);
+}
+function placePanel(headY) {                    // default spot, or wherever you last dragged it
+  const P = state.panelPose;
+  if (P) panel.position.set(P.x, P.y, P.z);
+  else panel.position.set(0, Math.max(0.9, headY + CONFIG.panelHeightOffset), -CONFIG.panelDistance);
+  facePanel(0, headY, 0);
+}
+function startDrag(c) {
+  const h = pickButton(c);
+  if (!h.onPanel || h.id) return false;         // only the background grabs; buttons still press normally
+  rayLocal(c);
+  const hp = world.worldToLocal(h.point.clone());
+  drag.c = c; drag.dist = clamp(hp.distanceTo(_ro), 0.3, 4);
+  drag.off.copy(panel.position).sub(hp);
+  state.dragging = true; drawPanel();
+  return true;
+}
+function updateDrag() {
+  const pl = playerLocal();
+  rayLocal(drag.c);
+  let x = _ro.x + _rd.x * drag.dist + drag.off.x;
+  let y = _ro.y + _rd.y * drag.dist + drag.off.y;
+  let z = _ro.z + _rd.z * drag.dist + drag.off.z;
+  y = clamp(y, 0.25, 2.4);
+  let hx = x - pl.x, hz = z - pl.z; const hl = Math.hypot(hx, hz) || 1e-6;   // keep it within arm's reach of the play area
+  const cl = clamp(hl, 0.5, 3.0);
+  x = pl.x + hx / hl * cl; z = pl.z + hz / hl * cl;
+  panel.position.set(x, y, z);
+  facePanel(pl.x, pl.y, pl.z);
+}
+function endDrag(c) {
+  if (drag.c !== c) return;
+  drag.c = null; c.userData.dragEnd = performance.now();
+  state.dragging = false;
+  state.panelPose = { x: panel.position.x, y: panel.position.y, z: panel.position.z };
+  saveSettings(); drawPanel();
 }
 
 for (let i = 0; i < 2; i++) {
@@ -1592,7 +1658,10 @@ for (let i = 0; i < 2; i++) {
   );
   line.scale.z = 2; line.name = 'ray';
   c.add(line);
+  c.addEventListener('selectstart', () => { if (!drag.c) startDrag(c); });
+  c.addEventListener('selectend', () => endDrag(c));
   c.addEventListener('select', () => {
+    if (drag.c === c || performance.now() - (c.userData.dragEnd || -1e9) < 200) return;   // that press was a drag, not a click
     const { id } = pickButton(c);
     if (id) pressButton(id);
   });
@@ -1613,8 +1682,7 @@ function placeWorld() {
   state.eyeHeight = clamp(_p.y, 1.0, 2.1);
   world.position.set(_p.x, 0, _p.z);
   world.rotation.set(0, yaw, 0);
-  panel.position.set(0, Math.max(0.9, _p.y + CONFIG.panelHeightOffset), -CONFIG.panelDistance);
-  panel.rotation.set(-0.12, 0, 0);
+  placePanel(_p.y);
   state.needsPlace = false;
 }
 
@@ -1626,12 +1694,13 @@ renderer.setAnimationLoop(() => {
   if (renderer.xr.isPresenting) {
     if (state.needsPlace) placeWorld();
 
+    if (drag.c) updateDrag();
     let hovered = null;
     controllers.forEach(c => {
       const ray = c.getObjectByName('ray');
       const { id, dist } = pickButton(c);
       ray.scale.z = dist ? dist : 2;
-      if (id) hovered = id;
+      if (id && !drag.c) hovered = id;
     });
     if (hovered !== state.hovered) { state.hovered = hovered; drawPanel(); }
   }
@@ -1683,6 +1752,7 @@ enterBtn.addEventListener('click', async () => {
     session.addEventListener('end', () => {
       renderer.domElement.style.display = 'none';
       ui.style.display = 'flex';
+      drag.c = null; state.dragging = false;
       resetRun(); drawPanel();
     });
     await renderer.xr.setSession(session);
