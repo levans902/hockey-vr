@@ -29,7 +29,7 @@
 <body>
 <div id="ui">
   <h1>🏒 SickMitts VR</h1>
-  <p>Clear your floor, put on your Quest 3, and tap below. Use the arrows on the floating panel to pick a game: <b>Endless Object Treadmill</b> sends objects down several lanes, <b>Keep Away</b> puts opposing defencemen on the ice around you, <b>Insanity</b> fills one wide lane with clutter that needs toe drags and fancy hands, and <b>Heads Up!</b> sends a wiggling zig-zag training aid down the lane while a French bulldog fires cannonballs at your head, so you have to duck while you stickhandle. Point a controller (or pinch with your hand) at the panel to adjust the settings, then start.</p>
+  <p>Clear your floor, put on your Quest 3, and tap below. Use the arrows on the floating panel to pick a game: <b>Endless Object Treadmill</b> sends objects down several lanes, <b>Keep Away</b> puts opposing defencemen on the ice around you, <b>Insanity</b> fills one wide lane with clutter that needs toe drags and fancy hands, <b>Heads Up!</b> sends a wiggling zig-zag training aid down the lane while a French bulldog fires cannonballs at your head, so you have to duck while you stickhandle, and <b>The Floor Is Lava</b> turns the floor into lava with a winding path you have to keep your puck on. Point a controller (or pinch with your hand) at the panel to adjust the settings, then start.</p>
   <button id="enter" disabled>Checking MR support…</button>
   <div id="msg"></div>
   <div id="build" style="color:#5f7391;font-size:.8rem"></div>
@@ -38,7 +38,7 @@
 <script type="module">
 import * as THREE from 'three';
 
-const BUILD = 'headsup-2';   // shown on the start screen and panel so you can tell which copy is loaded
+const BUILD = 'lava-1';   // shown on the start screen and panel so you can tell which copy is loaded
 document.getElementById('build').textContent = 'build ' + BUILD;
 
 /* ============================== CONFIG ============================== */
@@ -78,6 +78,24 @@ const CONFIG = {
     pathSlope: 0.4,            // how fast the guaranteed open path may wander sideways
     pathMinHalf: 0.14,         // half-width (m) of the guaranteed open path through the clutter
     startDensity: 4, startLevel: 2
+  },
+  lava: {
+    lavaWidth: 3.2,            // metres of lava across; the path winds inside it
+    ds: 0.1,                   // spacing of the points that make up the path (m)
+    tileMetres: 1.2,           // size of one lava texture tile (m)
+    startStraight: 2.0,        // path is dead straight for this long when a run starts (m)
+    puckLine: true,            // thin line across the lane where your puck is assumed to be (see keepAway.puckOffset)
+    startLevel: 2,
+    perDifficulty: {
+      // width: path width (m). sMax: steepest sideways slope (sideways m per forward m).
+      // turnMin/turnMax: how far the path goes before picking a new bend (m). aMax: how sharply the slope may change (per m).
+      // xMax: how far left/right the path may wander (m). latMax: most sideways speed the path may ask of you (m/s).
+      // flip: chance that the next bend goes the other way (S-bends).
+      easy:   { width: 1.10, sMax: 0.28, turnMin: 2.2, turnMax: 3.8, aMax: 0.35, xMax: 0.50, latMax: 0.8, flip: 0.15 },
+      medium: { width: 1.00, sMax: 0.50, turnMin: 1.6, turnMax: 2.8, aMax: 0.80, xMax: 0.65, latMax: 1.3, flip: 0.35 },
+      hard:   { width: 0.92, sMax: 0.85, turnMin: 1.2, turnMax: 2.2, aMax: 1.30, xMax: 0.80, latMax: 1.9, flip: 0.50 },
+      pro:    { width: 0.85, sMax: 1.15, turnMin: 0.9, turnMax: 1.7, aMax: 1.80, xMax: 0.90, latMax: 2.5, flip: 0.65 }
+    }
   },
   headsUp: {
     laneWidth: 1.5,            // metres: floor guide for the training aid
@@ -142,12 +160,14 @@ const state = {
   level: CONFIG.startLevel,
   lanes: CONFIG.startLanes,
   difficulty: CONFIG.startDifficulty,
-  game: 'treadmill',           // treadmill | keepaway | insanity | headsup
+  game: 'treadmill',           // treadmill | keepaway | insanity | headsup | lava
   levelKA: 2,                  // Keep Away speed level
   levelIN: CONFIG.insanity.startLevel,   // Insanity speed level
   density: CONFIG.insanity.startDensity, // Insanity clutter level 1-10
   levelHU: CONFIG.headsUp.startLevel,    // Heads Up! speed level
   shots: CONFIG.headsUp.startShots,      // Heads Up! cannon shot volume 1-10
+  levelLV: CONFIG.lava.startLevel,       // The Floor Is Lava speed level
+  distance: 0,                 // The Floor Is Lava: metres travelled along the path
   hits: 0,                     // Heads Up! cannonballs that hit you
   dodged: 0,                   // Heads Up! cannonballs you ducked
   eyeHeight: 1.6,              // standing head height, measured on (re)center
@@ -185,14 +205,15 @@ const GAMES = [
   { id: 'treadmill', name: 'ENDLESS OBJECT TREADMILL' },
   { id: 'keepaway',  name: 'KEEP AWAY' },
   { id: 'insanity',  name: 'INSANITY' },
-  { id: 'headsup',   name: 'HEADS UP!' }
+  { id: 'headsup',   name: 'HEADS UP!' },
+  { id: 'lava',      name: 'THE FLOOR IS LAVA' }
 ];
 const IC = CONFIG.insanity;
 const HC = CONFIG.headsUp;
 const curLevel = () => (state.game === 'keepaway' ? state.levelKA : state.game === 'insanity' ? state.levelIN
-  : state.game === 'headsup' ? state.levelHU : state.level);
+  : state.game === 'headsup' ? state.levelHU : state.game === 'lava' ? state.levelLV : state.level);
 const shownSpeed = () => (state.game === 'keepaway' ? attackSpeedFor(state.levelKA)
-  : speedFor(state.game === 'insanity' ? state.levelIN : state.game === 'headsup' ? state.levelHU : state.level));
+  : speedFor(state.game === 'insanity' ? state.levelIN : state.game === 'headsup' ? state.levelHU : state.game === 'lava' ? state.levelLV : state.level));
 
 /* ---------- remember settings between sessions ---------- */
 const SAVE_KEY = 'stickMR.v2';
@@ -207,6 +228,7 @@ const SAVE_KEY = 'stickMR.v2';
     if (Number.isInteger(s.density)) state.density = clamp(s.density, 1, 10);
     if (Number.isInteger(s.levelHU)) state.levelHU = clamp(s.levelHU, CONFIG.minLevel, CONFIG.maxLevel);
     if (Number.isInteger(s.shots)) state.shots = clamp(s.shots, 1, 10);
+    if (Number.isInteger(s.levelLV)) state.levelLV = clamp(s.levelLV, CONFIG.minLevel, CONFIG.maxLevel);
     if (GAMES.some(g => g.id === s.game)) state.game = s.game;
     if (s.panel && [s.panel.x, s.panel.y, s.panel.z].every(Number.isFinite)) state.panelPose = { x: s.panel.x, y: s.panel.y, z: s.panel.z };
   } catch (e) {}
@@ -216,7 +238,7 @@ function saveSettings() {
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(
     { lanes: state.lanes, difficulty: state.difficulty, level: state.level,
       levelKA: state.levelKA, levelIN: state.levelIN, density: state.density,
-      levelHU: state.levelHU, shots: state.shots, game: state.game, panel: state.panelPose })); } catch (e) {}
+      levelHU: state.levelHU, shots: state.shots, levelLV: state.levelLV, game: state.game, panel: state.panelPose })); } catch (e) {}
 }
 
 /* ============================== THREE SETUP ============================== */
@@ -290,7 +312,7 @@ kaRing.rotation.x = -Math.PI / 2; kaRing.position.y = 0.003;
 world.add(kaRing);
 function applyGameVisuals() {
   rebuildLanes();                                   // N lanes, or one wide lane for Insanity
-  laneGroup.visible = state.game !== 'keepaway';
+  laneGroup.visible = state.game !== 'keepaway' && state.game !== 'lava';
   kaRing.visible = state.game === 'keepaway';
 }
 applyGameVisuals();
@@ -1335,6 +1357,164 @@ function resetHeadsUp() {
 }
 resetHeadsUp();
 
+/* ============================== THE FLOOR IS LAVA ============================== */
+/* One long lane of glowing lava with a winding safe path across it. The path slides toward you at the chosen
+   speed and you keep your real puck on it (the game can't see your puck, so you judge it yourself, like the
+   other modes). A thin line across the lane marks where your puck is assumed to be (KC.puckOffset).
+   Difficulty controls how far, how fast and how often the path bends and how wide it is. Bends are limited so
+   the path never kinks tighter than its own width, and the sideways speed it asks of your hands is capped,
+   so it stays playable even at high speed levels. */
+const LC = CONFIG.lava;
+const LV = { pts: [], u: 0, genX: 0, genS: 0, target: 0, nextTurn: 0, t: 0 };
+const lavaLen = CONFIG.spawnDistance + CONFIG.despawnZ;
+const lavaParams = () => LC.perDifficulty[state.difficulty] || LC.perDifficulty.easy;
+const lavaSEff = (P, speed) => Math.min(P.sMax, P.latMax / Math.max(speed, 0.5));   // slope limit: sideways speed <= latMax
+
+function makeLavaTexture() {
+  const S = 256, c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d');
+  g.fillStyle = '#4a0b04'; g.fillRect(0, 0, S, S);
+  const blob = (x, y, r, c0, c1) => {                       // drawn 9 times so the tile wraps seamlessly
+    for (const ox of [-S, 0, S]) for (const oy of [-S, 0, S]) {
+      const gr = g.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, r);
+      gr.addColorStop(0, c0); gr.addColorStop(1, c1);
+      g.fillStyle = gr; g.beginPath(); g.arc(x + ox, y + oy, r, 0, Math.PI * 2); g.fill();
+    }
+  };
+  for (let i = 0; i < 44; i++) blob(Math.random() * S, Math.random() * S, 18 + Math.random() * 40, 'rgba(255,110,10,0.6)', 'rgba(255,110,10,0)');
+  for (let i = 0; i < 24; i++) blob(Math.random() * S, Math.random() * S, 8 + Math.random() * 20, 'rgba(255,220,90,0.75)', 'rgba(255,220,90,0)');
+  for (let i = 0; i < 22; i++) blob(Math.random() * S, Math.random() * S, 14 + Math.random() * 30, 'rgba(28,6,3,0.85)', 'rgba(28,6,3,0)');   // dark crust
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+function makePathTexture() {                                  // slate path: bright edges + a dashed centre line that shows the motion
+  const c = document.createElement('canvas'); c.width = 64; c.height = 128;
+  const g = c.getContext('2d');
+  g.fillStyle = 'rgba(26,40,68,0.6)'; g.fillRect(0, 0, 64, 128);
+  g.fillStyle = 'rgba(255,255,255,0.1)'; g.fillRect(6, 0, 52, 2);
+  g.fillStyle = 'rgba(235,248,255,0.95)'; g.fillRect(0, 0, 6, 128); g.fillRect(58, 0, 6, 128);
+  g.fillStyle = 'rgba(235,248,255,0.55)'; g.fillRect(30, 10, 4, 50);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = THREE.ClampToEdgeWrapping; t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+const lavaGroup = new THREE.Group(); lavaGroup.visible = false; world.add(lavaGroup);
+const lavaTex = makeLavaTexture();
+lavaTex.repeat.set(LC.lavaWidth / LC.tileMetres, lavaLen / LC.tileMetres);
+const lavaGeo = new THREE.PlaneGeometry(LC.lavaWidth, lavaLen, 1, 32);
+{ // fade the lava in at the far end and out behind you
+  const pos = lavaGeo.attributes.position, n = pos.count, col = new Float32Array(n * 4);
+  for (let i = 0; i < n; i++) {
+    const y = pos.getY(i);
+    const a = Math.min(clamp((lavaLen / 2 - y) / 1.0, 0, 1), clamp((y + lavaLen / 2) / 0.5, 0, 1));
+    col[i * 4] = col[i * 4 + 1] = col[i * 4 + 2] = 1; col[i * 4 + 3] = a;
+  }
+  lavaGeo.setAttribute('color', new THREE.BufferAttribute(col, 4));
+}
+const lavaMat = new THREE.MeshBasicMaterial({ map: lavaTex, vertexColors: true, transparent: true, opacity: 0.7,
+  depthWrite: false, side: THREE.DoubleSide });
+const lavaMesh = new THREE.Mesh(lavaGeo, lavaMat);
+lavaMesh.rotation.x = -Math.PI / 2; lavaMesh.position.set(0, 0.002, -(CONFIG.spawnDistance - CONFIG.despawnZ) / 2);
+lavaMesh.renderOrder = 1; lavaGroup.add(lavaMesh);
+
+// the path: a ribbon whose rows are rewritten every frame
+const LV_ROWS = Math.ceil(lavaLen / LC.ds) + 6;
+const ribPos = new Float32Array(LV_ROWS * 6), ribUv = new Float32Array(LV_ROWS * 4), ribCol = new Float32Array(LV_ROWS * 8);
+const ribGeo = new THREE.BufferGeometry();
+ribGeo.setAttribute('position', new THREE.BufferAttribute(ribPos, 3));
+ribGeo.setAttribute('uv', new THREE.BufferAttribute(ribUv, 2));
+ribGeo.setAttribute('color', new THREE.BufferAttribute(ribCol, 4));
+{ const idx = []; for (let i = 0; i < LV_ROWS - 1; i++) { const a = 2 * i; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); } ribGeo.setIndex(idx); }
+const pathMat = new THREE.MeshBasicMaterial({ map: makePathTexture(), vertexColors: true, transparent: true,
+  depthWrite: false, side: THREE.DoubleSide });
+const ribbon = new THREE.Mesh(ribGeo, pathMat);
+ribbon.frustumCulled = false; ribbon.renderOrder = 2; lavaGroup.add(ribbon);
+
+// thin line across the lane where your puck is assumed to be
+const puckLine = new THREE.Mesh(new THREE.PlaneGeometry(LC.lavaWidth, 0.03),
+  new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4, depthWrite: false, side: THREE.DoubleSide }));
+puckLine.rotation.x = -Math.PI / 2; puckLine.position.set(0, 0.006, -KC.puckOffset);
+puckLine.renderOrder = 3; puckLine.visible = LC.puckLine; lavaGroup.add(puckLine);
+
+/* ---- path generator: a random walk on the slope, so the path always bends smoothly ---- */
+function pickLavaTarget(P, speed) {
+  const sEff = lavaSEff(P, speed);
+  const mag = sEff * (0.4 + 0.6 * Math.random());
+  let sign = Math.random() < 0.5 ? -1 : 1;
+  if (Math.abs(LV.genS) > 0.03 && Math.random() < P.flip) sign = -Math.sign(LV.genS);   // flip direction: S-bends
+  LV.target = sign * mag;
+  LV.nextTurn = LV.u + P.turnMin + Math.random() * (P.turnMax - P.turnMin);
+}
+function genLavaPoint(P, speed) {
+  const ds = LC.ds, sEff = lavaSEff(P, speed);
+  if (LV.u >= LV.nextTurn) pickLavaTarget(P, speed);
+  LV.target = clamp(LV.target, -sEff, sEff);
+  const brake = LV.genS * LV.genS / (2 * P.aMax) + 0.05;       // start turning back before running out of room
+  if (LV.genX * LV.genS > 0 && Math.abs(LV.genX) + brake > P.xMax) LV.target = -Math.sign(LV.genX) * Math.max(Math.abs(LV.target), 0.4 * sEff);
+  const da = P.aMax * ds;
+  LV.genS += clamp(LV.target - LV.genS, -da, da);
+  LV.genX += LV.genS * ds;
+  if (Math.abs(LV.genX) > P.xMax + 0.15) { LV.genX = Math.sign(LV.genX) * (P.xMax + 0.15); LV.genS = 0; }   // safety net
+  LV.u += ds;
+  return { x: LV.genX, s: LV.genS, d: LV.u, w: P.width };
+}
+function addLavaPoint(z) {
+  const p = genLavaPoint(lavaParams(), speedFor(state.levelLV));
+  p.z = z; LV.pts.push(p);
+}
+function writeRibbon() {
+  const n = Math.min(LV.pts.length, LV_ROWS);
+  for (let i = 0; i < n; i++) {
+    const p = LV.pts[i], k = 1 / Math.hypot(1, p.s), hw = p.w / 2;
+    const nx = k * hw, nz = p.s * k * hw;                      // half-width step, perpendicular to the path
+    const a = (clamp((p.z + CONFIG.spawnDistance) / 1.0, 0, 1)) * clamp((CONFIG.despawnZ - p.z) / 0.6, 0, 1);
+    const v = p.d / LC.tileMetres;
+    for (let side = 0; side < 2; side++) {
+      const sg = side === 0 ? 1 : -1, r = 2 * i + side;
+      ribPos[r * 3] = p.x + sg * nx; ribPos[r * 3 + 1] = 0.004; ribPos[r * 3 + 2] = p.z + sg * nz;
+      ribUv[r * 2] = side; ribUv[r * 2 + 1] = v;
+      ribCol[r * 4] = ribCol[r * 4 + 1] = ribCol[r * 4 + 2] = 1; ribCol[r * 4 + 3] = a;
+    }
+  }
+  ribGeo.setDrawRange(0, Math.max(0, n - 1) * 6);
+  ribGeo.attributes.position.needsUpdate = ribGeo.attributes.uv.needsUpdate = ribGeo.attributes.color.needsUpdate = true;
+}
+function updateLava(dt) {
+  const speed = speedFor(state.levelLV), step = speed * dt;
+  LV.t += dt;
+  state.distance += step;
+  LV.pts.forEach(p => { p.z += step; });
+  while (LV.pts.length > 2 && LV.pts[1].z > CONFIG.despawnZ + LC.ds) LV.pts.shift();    // keep one point past the end
+  while (true) {
+    const far = LV.pts[LV.pts.length - 1], z = far.z - LC.ds;
+    if (z < -CONFIG.spawnDistance) break;
+    addLavaPoint(z);
+  }
+  lavaTex.offset.y = (lavaTex.offset.y + step / LC.tileMetres) % 1;                     // lava drifts along with the path
+  lavaMat.opacity = 0.68 + 0.07 * Math.sin(LV.t * 2.3);
+  writeRibbon();
+}
+function idleLava(dt) { LV.t += dt; lavaMat.opacity = 0.68 + 0.07 * Math.sin(LV.t * 2.3); }
+
+function resetLava() {
+  const on = state.game === 'lava';
+  lavaGroup.visible = on;
+  LV.pts.length = 0; LV.u = 0; LV.genX = 0; LV.genS = 0; LV.target = 0; LV.nextTurn = LC.startStraight;
+  lavaTex.offset.set(0, 0);
+  if (!on) return;
+  const P = lavaParams();
+  LV.pts.push({ x: 0, s: 0, d: 0, w: P.width, z: CONFIG.despawnZ });          // start at your back and lay the path out ahead
+  while (true) {
+    const z = LV.pts[LV.pts.length - 1].z - LC.ds;
+    if (z < -CONFIG.spawnDistance) break;
+    addLavaPoint(z);
+  }
+  writeRibbon();
+}
+resetLava();
+
 /* ============================== UI PANEL ============================== */
 const CW = 1024, CH = 704;
 const canvas = document.createElement('canvas'); canvas.width = CW; canvas.height = CH;
@@ -1353,7 +1533,7 @@ world.add(panel);
 const treadmillOnly = () => state.game === 'treadmill';
 const insanityOnly = () => state.game === 'insanity';
 const headsupOnly = () => state.game === 'headsup';
-const hasDifficulty = () => state.game === 'treadmill' || state.game === 'keepaway';
+const hasDifficulty = () => state.game === 'treadmill' || state.game === 'keepaway' || state.game === 'lava';
 const buttons = [
   { id: 'gameprev', x: 40,  y: 62,  w: 120, h: 62, label: '◀' },
   { id: 'gamenext', x: 864, y: 62,  w: 120, h: 62, label: '▶' },
@@ -1390,7 +1570,7 @@ const fmtTime = t => {
 
 let lastTimerText = '';
 function drawPanel() {
-  const ka = state.game === 'keepaway', ins = state.game === 'insanity', hu = state.game === 'headsup';
+  const ka = state.game === 'keepaway', ins = state.game === 'insanity', hu = state.game === 'headsup', lv = state.game === 'lava';
   ctx.clearRect(0, 0, CW, CH);
   ctx.fillStyle = 'rgba(10,18,34,0.9)';
   rr(0, 0, CW, CH, 36); ctx.fill();
@@ -1422,6 +1602,7 @@ function drawPanel() {
   const extra = ka ? 'Attacks ' + state.attacks
     : ins ? 'Density ' + state.density + '  ·  Passed ' + state.passed
     : hu ? 'Dodged ' + state.dodged + '  ·  Hit ' + state.hits
+    : lv ? 'Distance ' + Math.floor(state.distance) + ' m'
     : 'Passed ' + state.passed;
   ctx.fillText('Level ' + curLevel() + '  ·  ' + shownSpeed().toFixed(1) + ' m/s  ·  ' + extra, CW / 2, 236);
 
@@ -1451,6 +1632,12 @@ function drawPanel() {
     ctx.fillStyle = '#1a2740'; rr(215, 454, 769, 66, 20); ctx.fill();
     ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.font = '700 26px system-ui, sans-serif';
     ctx.fillText('ONE WIDE LANE  ·  CLUTTERED  ·  USE YOUR HANDS', 215 + 769 / 2, 489);
+  } else if (lv) {
+    ctx.font = '700 25px system-ui, sans-serif';
+    ctx.fillText('PATH', 40, 405);
+    ctx.fillStyle = '#1a2740'; rr(215, 372, 769, 66, 20); ctx.fill();
+    ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.font = '700 26px system-ui, sans-serif';
+    ctx.fillText('KEEP YOUR PUCK ON THE PATH  ·  ' + lavaParams().width.toFixed(2) + ' m WIDE', 215 + 769 / 2, 407);
   } else if (hu) {
     ctx.font = '700 25px system-ui, sans-serif';
     ctx.fillText('SHOTS', 40, 405);
@@ -1507,13 +1694,14 @@ function drawPanel() {
 drawPanel();
 
 function resetRun() {
-  state.mode = 'idle'; state.elapsed = 0; state.passed = 0; state.attacks = 0; state.hits = 0; state.dodged = 0;
+  state.mode = 'idle'; state.elapsed = 0; state.passed = 0; state.attacks = 0; state.hits = 0; state.dodged = 0; state.distance = 0;
   state.spawnTimer = 0; state.nextInterval = 0.5;
   resetPro();
   clearObstacles();
   clearDefenders();
   resetInsanity();
   resetHeadsUp();
+  resetLava();
   lastTimerText = '';
 }
 
@@ -1557,6 +1745,7 @@ function pressButton(id) {
         if (state.game === 'keepaway') state.levelKA = clamp(state.levelKA + delta, CONFIG.minLevel, CONFIG.maxLevel);
         else if (state.game === 'insanity') state.levelIN = clamp(state.levelIN + delta, CONFIG.minLevel, CONFIG.maxLevel);
         else if (state.game === 'headsup') state.levelHU = clamp(state.levelHU + delta, CONFIG.minLevel, CONFIG.maxLevel);
+        else if (state.game === 'lava') state.levelLV = clamp(state.levelLV + delta, CONFIG.minLevel, CONFIG.maxLevel);
         else state.level = clamp(state.level + delta, CONFIG.minLevel, CONFIG.maxLevel);
         saveSettings();
         break;
@@ -1710,11 +1899,13 @@ renderer.setAnimationLoop(() => {
     if (state.game === 'treadmill') updateTreadmill(dt);
     else if (state.game === 'keepaway') updateKeepAway(dt);
     else if (state.game === 'headsup') updateHeadsUp(dt);
+    else if (state.game === 'lava') updateLava(dt);
     else updateInsanity(dt);
 
-    const t = fmtTime(state.elapsed) + '|' + state.passed + '|' + state.attacks + '|' + state.hits + '|' + state.dodged;
+    const t = fmtTime(state.elapsed) + '|' + state.passed + '|' + state.attacks + '|' + state.hits + '|' + state.dodged + '|' + Math.floor(state.distance);
     if (t !== lastTimerText) { lastTimerText = t; drawPanel(); }
   } else if (state.mode === 'idle' && state.game === 'headsup') idleHeadsUp(dt);   // dog wags its tail while you pick settings
+  else if (state.game === 'lava') idleLava(dt);   // lava shimmers
   updateTint(dt);
 
   renderer.render(scene, camera);
