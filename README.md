@@ -53,7 +53,7 @@ Opposing defencemen skate around you in the zone in front of and beside you, nev
 
 One lane, as wide as three treadmill lanes (1.65 m), packed with objects of every size. Instead of switching lanes, you have to work through the clutter with toe drags and fancy handles.
 
-- **Big and odd shapes:** besides the six treadmill objects, Insanity adds hockey sticks lying flat at any angle, a goalie stick, a crossed pair of sticks, an equipment bag, a goalie pad, a bucket of pucks and a helmet. The long ones block whole strips of the lane, so the gaps vary a lot in size and shape.
+- **Big and odd shapes:** besides the six treadmill objects, Insanity adds hockey sticks lying flat at all sorts of angles (mostly diagonal or across the lane), a goalie stick, a crossed pair of sticks, two kinds of hockey bag, a goalie pad, a bucket of pucks, a helmet, a wide goal net and an ice resurfacer that fills one whole half of the lane. A puck can't slide over a flat stick, so these force wider moves, lifts and toe drags instead of just dangling around thin objects. Every object has a footprint (a line plus a radius) that the generator keeps the gap around, so long objects block whole strips of the lane and the gaps vary a lot in size and shape.
 - **Density 1 to 10:** density 1 is a sparse scatter with wide gaps. At density 10 neighbouring objects are only about 20 cm apart.
 - **Always passable:** every new object is checked so that a route through the lane still exists. It can twist and turn, and at the highest densities it is tight.
 - **Speed:** levels 1 to 10, the same speeds as the treadmill.
@@ -73,7 +73,7 @@ At the far end of the lane a French bulldog with a cannon strapped to its back w
 
 ### The Floor Is Lava
 
-One continuous lane of glowing lava, 3.2 m wide, with a safe path winding through it. The path slides toward you at the chosen speed, so you keep stickhandling your real puck sideways to stay on it while it bends left and right. The path is 0.85 to 1.1 m wide depending on difficulty, which leaves room for real stickhandling. Lava drifts along with it, and the path has bright edges and a dashed centre line so you can feel the speed.
+One continuous lane of glowing lava, 3.2 m wide, with a safe path winding through it. The path slides toward you at the chosen speed, so you keep stickhandling your real puck sideways to stay on it while it bends left and right. The path is 0.85 to 1.1 m wide depending on difficulty, which leaves room for real stickhandling. The lava is drawn only beside the path, not under it, and the path itself is almost clear with bright edges and a faint dashed centre line, so your puck stays easy to see on it. Lava drifts along with the path so you can feel the speed.
 
 A thin white line across the lane marks where the game assumes your real puck is (the same 0.55 m in front of you that Keep Away uses). Watch the path where it crosses that line. The game can't see your puck, so you judge whether you stayed on the path yourself, like the other modes. The panel counts the distance you have travelled along the path.
 
@@ -97,15 +97,17 @@ Each object is built from Three.js shapes, so there are no external assets.
 - **Hockey gloves:** a pair lying flat on the floor
 - **Mini net:** a red-framed net with translucent netting
 
-The Treadmill uses all six. Insanity uses these six plus eight bigger, oddly shaped ones:
+The Treadmill uses all six. Insanity uses these six plus ten bigger, oddly shaped ones:
 
-- **Hockey stick** (two sizes): lying flat, pointing in any direction
+- **Hockey stick** (two sizes, two colours): lying flat, mostly at diagonals across the lane
 - **Goalie stick:** long shaft with a wide paddle
 - **Crossed sticks:** two sticks lying across each other
 - **Equipment bag:** a big duffel
 - **Goalie leg pad:** long and flat
 - **Bucket of pucks**
 - **Helmet**
+- **Wide net:** a 1.1 m wide red-framed goal net
+- **Ice resurfacer:** 1.5 m long and 0.84 m wide, so exactly half the lane, always on the left or the right half and usually pointing at you. It is the rarest object.
 
 Keep Away uses full-size defencemen in red jerseys instead. Heads Up! uses a zig-zag aid of black pods and rods, a French bulldog and a cannon.
 
@@ -194,7 +196,7 @@ Everything adjustable is in the `CONFIG` object near the top of the script in `i
 | `headsUp.aidSpacing`, `aidAmplitude`, `aidPeriod`, `aidPhasePerPod` | Heads Up!: gap between pods, how far they swing sideways at full zig-zag (0 is straight), seconds per breathing cycle, and how much the shape ripples. |
 | `headsUp.dogDistance`, `dogScale`, `dogRangeX`, `dogRangeZ`, `dogSpeed` | Heads Up!: how far away the bulldog is, how big it looks, and how much and how fast it wanders. |
 | `headsUp.ballRadius`, `ballSpeedBase`, `ballSpeedStep`, `arcHeight`, `hitRadius`, `aimNoise` | Heads Up!: cannonball size, speed, how much it lobs, how close counts as a hit, and shot inaccuracy. |
-| `lava.lavaWidth`, `startStraight`, `puckLine` | The Floor Is Lava: width of the lava, how long the path is straight at the start, and whether the puck line is shown. |
+| `lava.lavaWidth`, `startStraight`, `puckLine`, `pathFill` | The Floor Is Lava: width of the lava, how long the path is straight at the start, whether the puck line is shown, and how solid the path looks (0 is clear, 1 is solid slate; the bright edges always show). |
 | `lava.perDifficulty` | The Floor Is Lava: for each difficulty, `width` of the path, `sMax` (steepest bend), `turnMin` / `turnMax` (distance between bends), `aMax` (how sharp a bend can be), `xMax` (how far it wanders) and `latMax` (the most sideways speed it can ask of you). |
 | `headsUp.telegraphBase`, `intervalMax`, `intervalMin`, `burstChanceMax` | Heads Up!: warning time before a shot, time between shots at shots 1 and 10, and how often bursts happen. |
 | `headsUp.tintPeak`, `tintFade` | Heads Up!: strength of the red hit tint (0 to 1) and how long it takes to fade. |
