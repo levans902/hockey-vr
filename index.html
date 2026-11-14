@@ -38,7 +38,7 @@
 <script type="module">
 import * as THREE from 'three';
 
-const BUILD = 'zoo-1';   // shown on the start screen and panel so you can tell which copy is loaded
+const BUILD = 'storm-1';   // shown on the start screen and panel so you can tell which copy is loaded
 document.getElementById('build').textContent = 'build ' + BUILD;
 
 /* ============================== CONFIG ============================== */
@@ -157,6 +157,30 @@ const CONFIG = {
     sound: true, volume: 0.5,
     startLevel: 2, startShots: 4
   },
+  getOut: {                    // GET OUT OF THE WAY
+    distance: 4.5,             // metres in front of you the shooters stand
+    spacing: 1.5, stagger: 0.5, drift: 0.3,   // sideways gap between shooters, every other one stands this much closer, how far they sway
+    speedBase: 2.5, speedStep: 0.8,           // puck speed (m/s) at speed level 0, and extra m/s per level (level 10 = 10.5 m/s)
+    puckRadius: 0.07, puckThick: 0.05,        // drawn bigger than a real puck (3.8 cm) so it reads from a few metres
+    floorY: 0.05,              // lowest aim height: near your feet
+    aimNoise: 0.08,            // random sideways error (m)
+    bodyRadius: 0.26,          // a puck passing this close to your body (below head height) is a hit
+    telegraphBase: 0.8, telegraphPerLevel: 0.03, telegraphMin: 0.45,   // glow-and-wind-up warning before each shot (s)
+    firstShot: 2.0, interval: 3.2,            // seconds before the first shot, then average seconds between one shooter's shots
+    startLevel: 2, startShooters: 2
+  },
+  storm: {                     // PUCK STORM
+    spawnDist: 7.0,            // pucks appear this far in front of you
+    laneHalf: 1.8,             // pucks and stars appear within this far left/right of centre
+    maxPucks: 120,
+    perMetreMin: 0.35, perMetreMax: 2.4,      // pucks per metre of travel at density 1 / 10 (so more pucks per second at higher speed)
+    aimedShare: 0.35,          // share of pucks steered to arrive where you are standing
+    floorShare: 0.4,           // share of pucks sliding along the floor (the rest fly at random heights up to your head)
+    starEvery: 7, firstStar: 3,               // average seconds between stars, and the first one
+    starSize: 0.11, starYMin: 0.35,           // star size (m) and lowest height (it drifts between chest and head)
+    starGrabRadius: 0.3, starBodyRadius: 0.32,// how close a controller / your body must be to grab it
+    startLevel: 2, startDensity: 4
+  },
   keepAway: {
     defenderScale: 1.0,        // 1.0 = roughly full-size defenceman (about 1.8 m tall)
     orbitSpeedBase: 0.5,       // m/s skating around at level 0
@@ -206,6 +230,11 @@ const state = {
   shiftLV: 0,                  // The Floor Is Lava: same
   densityDA: 4,                // Dog Attack: how many animals, 1 to 10
   animal: 'dog',               // Dog Attack: dog | shark | trex
+  levelGO: CONFIG.getOut.startLevel,   // Get Out Of The Way speed level
+  shooters: CONFIG.getOut.startShooters, // Get Out Of The Way: number of shooters 1-5
+  levelST: CONFIG.storm.startLevel,    // Puck Storm speed level
+  densityST: CONFIG.storm.startDensity,// Puck Storm density 1-10
+  stars: 0,                    // Puck Storm stars grabbed
   hits: 0,                     // Heads Up! cannonballs that hit you
   dodged: 0,                   // Heads Up! cannonballs you ducked
   eyeHeight: 1.6,              // standing head height, measured on (re)center
@@ -245,15 +274,20 @@ const GAMES = [
   { id: 'insanity',  name: 'INSANITY' },
   { id: 'headsup',   name: 'HEADS UP!' },
   { id: 'lava',      name: 'THE FLOOR IS LAVA' },
-  { id: 'dogattack', name: 'DOG ATTACK' }
+  { id: 'dogattack', name: 'DOG ATTACK' },
+  { id: 'goaway',    name: 'GET OUT OF THE WAY' },
+  { id: 'storm',     name: 'PUCK STORM' }
 ];
 const IC = CONFIG.insanity;
 const HC = CONFIG.headsUp;
 const curLevel = () => (state.game === 'keepaway' ? state.levelKA : state.game === 'insanity' ? state.levelIN
   : state.game === 'headsup' ? state.levelHU : state.game === 'lava' ? state.levelLV
-  : state.game === 'dogattack' ? state.levelDA : state.level);
+  : state.game === 'dogattack' ? state.levelDA : state.game === 'goaway' ? state.levelGO
+  : state.game === 'storm' ? state.levelST : state.level);
 const shownSpeed = () => (state.game === 'keepaway' ? attackSpeedFor(state.levelKA)
   : state.game === 'dogattack' ? daSpeed(state.levelDA)
+  : state.game === 'goaway' ? goSpeed()
+  : state.game === 'storm' ? stSpeed()
   : speedFor(state.game === 'insanity' ? state.levelIN : state.game === 'headsup' ? state.levelHU : state.game === 'lava' ? state.levelLV : state.level));
 
 /* ---------- remember settings between sessions ---------- */
@@ -270,6 +304,10 @@ const SAVE_KEY = 'stickMR.v2';
     if (Number.isInteger(s.levelHU)) state.levelHU = clamp(s.levelHU, CONFIG.minLevel, CONFIG.maxLevel);
     if (Number.isInteger(s.shots)) state.shots = clamp(s.shots, 1, 10);
     if (Number.isInteger(s.levelLV)) state.levelLV = clamp(s.levelLV, CONFIG.minLevel, CONFIG.maxLevel);
+    if (Number.isInteger(s.levelGO)) state.levelGO = clamp(s.levelGO, CONFIG.minLevel, CONFIG.maxLevel);
+    if (Number.isInteger(s.levelST)) state.levelST = clamp(s.levelST, CONFIG.minLevel, CONFIG.maxLevel);
+    if (Number.isInteger(s.shooters)) state.shooters = clamp(s.shooters, 1, 5);
+    if (Number.isInteger(s.densityST)) state.densityST = clamp(s.densityST, 1, 10);
     if (Number.isInteger(s.levelDA)) state.levelDA = clamp(s.levelDA, CONFIG.minLevel, CONFIG.maxLevel);
     const sc = (v, lim) => Math.round(clamp(v, lim.scaleMin, lim.scaleMax) * 10) / 10;
     if (Number.isFinite(s.scaleDA)) state.scaleDA = sc(s.scaleDA, CONFIG.dogAttack);
@@ -290,6 +328,7 @@ function saveSettings() {
       levelKA: state.levelKA, levelIN: state.levelIN, density: state.density,
       levelHU: state.levelHU, shots: state.shots, levelLV: state.levelLV,
       levelDA: state.levelDA, scaleDA: state.scaleDA, scaleLV: state.scaleLV,
+      levelGO: state.levelGO, levelST: state.levelST, shooters: state.shooters, densityST: state.densityST,
       shiftDA: state.shiftDA, shiftLV: state.shiftLV, densityDA: state.densityDA, animal: state.animal, game: state.game, panel: state.panelPose })); } catch (e) {}
 }
 
@@ -364,7 +403,7 @@ kaRing.rotation.x = -Math.PI / 2; kaRing.position.y = 0.003;
 world.add(kaRing);
 function applyGameVisuals() {
   rebuildLanes();                                   // N lanes, or one wide lane for Insanity
-  laneGroup.visible = state.game !== 'keepaway' && state.game !== 'lava' && state.game !== 'dogattack';
+  laneGroup.visible = !['keepaway', 'lava', 'dogattack', 'goaway', 'storm'].includes(state.game);
   kaRing.visible = state.game === 'keepaway';
 }
 applyGameVisuals();
@@ -1542,6 +1581,9 @@ function sfx(kind, pan) {
     };
     if (kind === 'bark') { tone('sawtooth', 460, 250, 0.11, 0.3); tone('sawtooth', 430, 220, 0.13, 0.3, 0.15); }
     else if (kind === 'boom') { tone('sine', 140, 38, 0.45, 0.9); noise(0.45, 0.8, 900); }
+    else if (kind === 'ping') { tone('sine', 700, 1000, 0.09, 0.25); }
+    else if (kind === 'shot') { tone('square', 260, 90, 0.12, 0.35); noise(0.12, 0.6, 3000); }
+    else if (kind === 'star') { [660, 880, 1320, 1760].forEach((f, k) => tone('triangle', f, f * 1.01, 0.16, 0.25, k * 0.06)); }
     else if (kind === 'hit') { tone('sine', 110, 45, 0.25, 0.8); noise(0.2, 0.5, 1500); }
   } catch (e) {}
 }
@@ -2089,6 +2131,262 @@ function updateDogAttack(dt, active) {
 }
 resetDogAttack();
 
+/* ============================== GET OUT OF THE WAY / PUCK STORM ============================== */
+/* Two puck-dodging modes that share one puck pool, one hit test and the red hit tint from Heads Up!.
+   GET OUT OF THE WAY: 1-5 hockey players stand in a fan about GC.distance metres out. Each winds up (the puck
+   glows on its blade), then slaps a puck at you. The aim point is picked at the moment of the shot, anywhere
+   between your feet and your headset, so it can be a floor-level slider or a head-high shot.
+   PUCK STORM: pucks flow toward you like the Insanity objects, at random heights and places, mixed with
+   spinning, sparkling power-up stars. Grab a star (touch it with a controller, hand or your body) to wipe every
+   puck currently in the air.
+   A puck counts as a hit when it passes within GC.bodyRadius of your vertical axis while it is below your head
+   (+ a little). Hits flash the view red exactly like Heads Up!. */
+const GC = CONFIG.getOut, SC = CONFIG.storm;
+const PK = { pucks: [], stars: [], shooters: [], starT: 0, nextStar: 3, spawnAcc: 0 };
+const goSpeed = () => GC.speedBase + GC.speedStep * state.levelGO;
+const stSpeed = () => speedFor(state.levelST);
+
+const pkMat = {
+  puck: std(0x0c0d10, { roughness: 0.35 }),
+  rim: new THREE.MeshBasicMaterial({ color: 0xff7a1a }),
+  streak: new THREE.MeshBasicMaterial({ color: 0xffd9a0, transparent: true, opacity: 0.35, depthWrite: false }),
+  ring: new THREE.MeshBasicMaterial({ color: 0xffb02e, transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide }),
+  star: new THREE.MeshStandardMaterial({ color: 0xffd400, emissive: 0xffa800, emissiveIntensity: 1.6, roughness: 0.3, metalness: 0.4 }),
+  halo: new THREE.MeshBasicMaterial({ color: 0xffe066, transparent: true, opacity: 0.22, depthWrite: false, blending: THREE.AdditiveBlending }),
+  glint: new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, depthWrite: false, blending: THREE.AdditiveBlending }),
+  skin: std(0xe0b090, { roughness: 0.8 }), stick: std(0xb08850, { roughness: 0.6 }), tape: std(0xf4f4f4, { roughness: 0.6 })
+};
+const puckGeo = new THREE.CylinderGeometry(GC.puckRadius, GC.puckRadius, GC.puckThick, 20);
+const puckTemplate = (() => {
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(puckGeo, pkMat.puck));
+  const r = new THREE.Mesh(new THREE.TorusGeometry(GC.puckRadius, 0.007, 6, 20), pkMat.rim);   // bright rim: easy to see
+  r.rotation.x = Math.PI / 2; g.add(r);
+  return g;
+})();
+const streakGeo = new THREE.BoxGeometry(0.05, 0.02, 1);
+
+function addPuck(x, y, z, vx, vy, vz, streak) {
+  if (PK.pucks.length >= SC.maxPucks) return null;
+  const obj = puckTemplate.clone(); obj.position.set(x, y, z); world.add(obj);
+  const shadow = new THREE.Mesh(shadowGeo, mat.shadow);
+  shadow.rotation.x = -Math.PI / 2; shadow.position.set(x, 0.004, z); shadow.scale.setScalar(GC.puckRadius * 1.6); world.add(shadow);
+  let st = null;
+  if (streak) { st = new THREE.Mesh(streakGeo, pkMat.streak); world.add(st); }
+  const p = { obj, shadow, st, v: new THREE.Vector3(vx, vy, vz), prev: new THREE.Vector3(x, y, z), passed: false, age: 0, spin: 4 + Math.random() * 6 };
+  PK.pucks.push(p); return p;
+}
+function removePuck(i) {
+  const b = PK.pucks[i]; world.remove(b.obj); world.remove(b.shadow); if (b.st) world.remove(b.st); PK.pucks.splice(i, 1);
+}
+const _pz = new THREE.Vector3();
+function updatePucks(dt, pl) {
+  for (let i = PK.pucks.length - 1; i >= 0; i--) {
+    const b = PK.pucks[i], p = b.obj.position;
+    b.prev.copy(p); b.age += dt;
+    p.x += b.v.x * dt; p.y += b.v.y * dt; p.z += b.v.z * dt;
+    if (p.y < GC.puckThick / 2) p.y = GC.puckThick / 2;
+    b.obj.rotation.y += b.spin * dt;
+    b.shadow.position.set(p.x, 0.004, p.z);
+    if (b.st) {                                                       // motion streak behind the puck
+      const sp = b.v.length(), L = Math.min(0.9, sp * 0.06);
+      b.st.visible = L > 0.05;
+      b.st.scale.set(1, 1, L);
+      b.st.position.set(p.x - b.v.x / sp * L / 2, p.y, p.z - b.v.z / sp * L / 2);
+      b.st.lookAt(p.x, p.y, p.z);
+    }
+    // hit test: closest approach in the floor plane to your vertical axis, then check the height there
+    const ax = b.prev.x - pl.x, az = b.prev.z - pl.z, dx = p.x - b.prev.x, dz = p.z - b.prev.z;
+    const l2 = dx * dx + dz * dz, t = l2 > 1e-9 ? clamp(-(ax * dx + az * dz) / l2, 0, 1) : 0;
+    const d = Math.hypot(ax + dx * t, az + dz * t), y = b.prev.y + (p.y - b.prev.y) * t;
+    if (!b.passed && d < GC.bodyRadius + GC.puckRadius && y > -0.02 && y < pl.y + 0.12) {
+      state.hits++; HU.tint = 1; sfx('hit', clamp((p.x - pl.x) / 2, -1, 1));
+      removePuck(i); continue;
+    }
+    if (!b.passed && p.z > pl.z + 0.3) { b.passed = true; state.dodged++; }
+    if (p.z > 2.5 || b.age > 14 || Math.abs(p.x) > 14) removePuck(i);
+  }
+}
+function clearPucks() {
+  while (PK.pucks.length) removePuck(PK.pucks.length - 1);
+  while (PK.stars.length) removeStar(PK.stars.length - 1);
+}
+
+/* ---------- GET OUT OF THE WAY: shooters ---------- */
+const JERSEYS = [0xd62828, 0x2a6fdb, 0x2a9d58, 0xf4a261, 0x8e44ad];
+const _bladeP = { x: 0.18, y: 0.03, z: 0.75 };                       // where the puck rests, in shooter-local coordinates
+function makeShooter(i) {
+  const g = new THREE.Group(), jer = std(JERSEYS[i % JERSEYS.length], { roughness: 0.7 }), pants = std(0x1b2230, { roughness: 0.8 });
+  g.add(cyl(0.075, 0.07, 0.85, pants, -0.1, 0.43, 0, 12), cyl(0.075, 0.07, 0.85, pants, 0.1, 0.43, 0, 12));
+  g.add(box(0.46, 0.58, 0.26, jer, 0, 1.13, 0));
+  g.add(box(0.48, 0.12, 0.28, pants, 0, 0.85, 0));
+  g.add(mesh(new THREE.SphereGeometry(0.1, 14, 12), pkMat.skin, 0, 1.55, 0.02));
+  const helm = mesh(new THREE.SphereGeometry(0.125, 14, 12), jer, 0, 1.59, 0); helm.scale.y = 0.85; g.add(helm);
+  const armL = cyl(0.04, 0.04, 0.55, jer, -0.3, 1.1, 0.1, 8); armL.rotation.x = 0.7; g.add(armL);
+  // stick pivots at the hands; its children are positioned relative to the hands
+  const pivot = new THREE.Group(); pivot.position.set(0.15, 0.95, 0.3); g.add(pivot);
+  const H = new THREE.Vector3(0.15, 0.95, 0.3), B = new THREE.Vector3(0.2, 0.04, 0.75);
+  const dir = H.clone().sub(B).normalize(), len = 1.55;
+  const shaft = cyl(0.014, 0.014, len, pkMat.stick, 0, 0, 0, 6);
+  shaft.position.copy(B).sub(H).addScaledVector(dir, len / 2); shaft.quaternion.setFromUnitVectors(UP, dir); pivot.add(shaft);
+  const blade = box(0.3, 0.06, 0.025, pkMat.stick, 0, 0, 0); blade.position.set(B.x - H.x - 0.1, B.y - H.y + 0.03, B.z - H.z); pivot.add(blade);
+  const tape = box(0.3, 0.02, 0.03, pkMat.tape, 0, 0, 0); tape.position.copy(blade.position); tape.position.y -= 0.015; pivot.add(tape);
+  const arm2 = cyl(0.04, 0.04, 0.55, jer, 0.27, 1.05, 0.15, 8); arm2.rotation.x = 1.0; g.add(arm2);
+  // the puck waiting on the blade, with a glowing warning ring
+  const puck = puckTemplate.clone(); puck.position.set(_bladeP.x, _bladeP.y, _bladeP.z); g.add(puck);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.12, 0.17, 24), pkMat.ring); ring.rotation.x = -Math.PI / 2;
+  ring.position.set(_bladeP.x, 0.01, _bladeP.z); g.add(ring);
+  const sh = new THREE.Mesh(shadowGeo, mat.shadow); sh.rotation.x = -Math.PI / 2; sh.position.y = 0.004; sh.scale.setScalar(0.45); g.add(sh);
+  return { g, pivot, puck, ring, state: 'wait', t: 0, wait: 0, yaw: 0, baseX: 0, ph: Math.random() * 6.28, x: 0, z: 0, fired: false };
+}
+function layoutShooters() {
+  const n = state.shooters;
+  PK.shooters.forEach((s, i) => {
+    s.baseX = (i - (n - 1) / 2) * GC.spacing;
+    s.z = -GC.distance + (i % 2) * GC.stagger;
+    s.x = s.baseX; s.state = 'wait'; s.t = 0;
+    s.wait = GC.firstShot + i * 0.55 + Math.random() * 0.8;
+    s.g.position.set(s.x, 0, s.z); s.yaw = 0; s.g.rotation.y = 0;
+    s.pivot.rotation.x = 0; s.ring.visible = false; s.puck.visible = true;
+  });
+}
+function resetGoAway() {
+  clearPucks(); HU.puffs.forEach(f => { world.remove(f.m); f.m.material.dispose(); }); HU.puffs.length = 0;
+  PK.shooters.forEach(s => world.remove(s.g)); PK.shooters.length = 0;
+  if (state.game !== 'goaway') return;
+  for (let i = 0; i < state.shooters; i++) { const s = makeShooter(i); world.add(s.g); PK.shooters.push(s); }
+  layoutShooters();
+}
+const telegraphGO = () => Math.max(GC.telegraphMin, GC.telegraphBase - GC.telegraphPerLevel * state.levelGO);
+const _sp = new THREE.Vector3();
+function updateShooters(dt, pl, active) {
+  const t = state.elapsed;
+  PK.shooters.forEach((s, i) => {
+    // drift sideways a little and keep facing you
+    s.x = s.baseX + GC.drift * Math.sin(t * 0.5 + s.ph);
+    s.g.position.x = s.x;
+    if (s.state !== 'wind') {
+      const want = Math.atan2(pl.x - s.x, pl.z - s.z); let d = want - s.yaw; d = Math.atan2(Math.sin(d), Math.cos(d));
+      s.yaw += d * (1 - Math.exp(-4 * dt)); s.g.rotation.y = s.yaw;
+    }
+    if (!active) { s.pivot.rotation.x = 0; s.ring.visible = false; return; }
+    s.t += dt;
+    if (s.state === 'wait') {
+      s.pivot.rotation.x *= Math.exp(-6 * dt);
+      s.puck.visible = true; s.ring.visible = false;
+      if (s.t >= s.wait) { s.state = 'wind'; s.t = 0; s.fired = false; sfx('ping', s.x / 3); }
+    } else if (s.state === 'wind') {
+      const T = telegraphGO(), u = Math.min(1, s.t / T);
+      s.pivot.rotation.x = -1.1 * Math.sin(u * Math.PI / 2);             // stick goes back
+      const pulse = 0.5 + 0.5 * Math.sin(s.t * 26);
+      s.ring.visible = true; s.ring.scale.setScalar(1 + 0.35 * pulse + (1 - u) * 0.4); s.ring.material.opacity = 0.55 + 0.4 * pulse;
+      if (u >= 1) {                                                     // fire!
+        s.pivot.rotation.x = 0.35;                                      // stick whips through
+        s.puck.getWorldPosition(_sp); world.worldToLocal(_sp);
+        const ty = GC.floorY + Math.random() * Math.max(0.05, pl.y - 0.03 - GC.floorY);   // anywhere between feet and head
+        const tx = pl.x + (Math.random() * 2 - 1) * GC.aimNoise;
+        const dx = tx - _sp.x, dy = ty - _sp.y, dz = pl.z - _sp.z, L = Math.hypot(dx, dy, dz) || 1, sp = goSpeed();
+        addPuck(_sp.x, _sp.y, _sp.z, dx / L * sp, dy / L * sp, dz / L * sp, true);
+        sfx('shot', s.x / 3);
+        s.state = 'follow'; s.t = 0; s.puck.visible = false; s.ring.visible = false;
+      }
+    } else if (s.state === 'follow') {
+      s.pivot.rotation.x += (0 - s.pivot.rotation.x) * (1 - Math.exp(-5 * dt));
+      if (s.t > 0.45) { s.state = 'wait'; s.t = 0; s.wait = GC.interval * (0.65 + Math.random() * 0.7); s.puck.visible = true; }
+    }
+  });
+}
+
+/* ---------- PUCK STORM: stars + flow ---------- */
+const starShape = (() => {
+  const s = new THREE.Shape(), R = SC.starSize, r = R * 0.45;
+  for (let i = 0; i < 10; i++) { const a = Math.PI / 2 + i * Math.PI / 5, rr_ = i % 2 ? r : R; const x = Math.cos(a) * rr_, y = Math.sin(a) * rr_; i ? s.lineTo(x, y) : s.moveTo(x, y); }
+  s.closePath(); return s;
+})();
+const starGeo = (() => { const g = new THREE.ExtrudeGeometry(starShape, { depth: SC.starSize * 0.4, bevelEnabled: false }); g.translate(0, 0, -SC.starSize * 0.2); return g; })();
+const glintGeo = new THREE.OctahedronGeometry(1, 0);
+const starHaloGeo = new THREE.SphereGeometry(1, 12, 10);
+function makeStar() {
+  const g = new THREE.Group();
+  const spin = new THREE.Group(); spin.add(new THREE.Mesh(starGeo, pkMat.star)); g.add(spin);
+  const halo = new THREE.Mesh(starHaloGeo, pkMat.halo); halo.scale.setScalar(SC.starSize * 1.9); g.add(halo);
+  const glints = [];
+  for (let i = 0; i < 4; i++) { const m = new THREE.Mesh(glintGeo, pkMat.glint); g.add(m); glints.push(m); }
+  return { g, spin, halo, glints, age: 0, v: new THREE.Vector3(), ph: Math.random() * 6.28 };
+}
+function removeStar(i) { world.remove(PK.stars[i].g); PK.stars.splice(i, 1); }
+function spawnStar(pl, speed) {
+  const s = makeStar();
+  const tx = pl.x + (Math.random() * 2 - 1) * 0.5, sx = clamp((Math.random() * 2 - 1) * SC.laneHalf, -SC.laneHalf, SC.laneHalf);
+  const y = SC.starYMin + Math.random() * Math.max(0.1, (pl.y - 0.15) - SC.starYMin);
+  const T = SC.spawnDist / speed;
+  s.g.position.set(sx, y, -SC.spawnDist); s.y0 = y; s.v.set((tx - sx) / T, 0, speed);
+  world.add(s.g); PK.stars.push(s);
+}
+const _cw = new THREE.Vector3();
+function collectStar(s, pl) {
+  state.stars++;
+  const p = s.g.position;
+  for (let i = 0; i < 16; i++) {                                         // sparkle burst
+    const a = Math.random() * 6.283, e = (Math.random() - 0.3) * 1.2;
+    addPuff(p, i % 2 ? 0xffe066 : 0xffffff, 0.03, 0.09, 0.5 + Math.random() * 0.4, Math.cos(a) * 1.1, e * 1.1, Math.sin(a) * 1.1, 1);
+  }
+  PK.pucks.forEach(b => { for (let k = 0; k < 2; k++) addPuff(b.obj.position, 0xffd24a, 0.05, 0.22, 0.55, 0, 0.4, 0, 0.8); });
+  addPuff(_cw.set(pl.x, 0.9, pl.z), 0xffe066, 0.3, 4.5, 0.6, 0, 0, 0, 0.35);       // shockwave
+  while (PK.pucks.length) removePuck(PK.pucks.length - 1);                // the power-up: every puck in the air vanishes
+  sfx('star', 0);
+}
+function updateStars(dt, pl, speed) {
+  const t = state.elapsed;
+  for (let i = PK.stars.length - 1; i >= 0; i--) {
+    const s = PK.stars[i], p = s.g.position;
+    s.age += dt; p.x += s.v.x * dt; p.z += s.v.z * dt; p.y = s.y0 + 0.05 * Math.sin(s.age * 3 + s.ph);
+    s.spin.rotation.y += dt * 3.2; s.spin.rotation.z = 0.25 * Math.sin(s.age * 2.1 + s.ph);
+    const pulse = 1 + 0.18 * Math.sin(s.age * 9 + s.ph);
+    s.halo.scale.setScalar(SC.starSize * 1.9 * pulse);
+    s.glints.forEach((m, k) => {                                          // twinkling sparkles orbiting the star
+      const a = s.age * (1.6 + k * 0.4) + k * 1.57 + s.ph, r = SC.starSize * (1.5 + 0.35 * Math.sin(s.age * 4 + k));
+      m.position.set(Math.cos(a) * r, Math.sin(a * 1.3) * r * 0.7, Math.sin(a) * r * 0.6);
+      const tw = Math.max(0, Math.sin(s.age * 11 + k * 2.1 + s.ph)); m.scale.setScalar(SC.starSize * 0.2 * tw * tw + 0.002);
+      m.rotation.y = s.age * 5;
+    });
+    if (Math.random() < dt * 5) addPuff(p, 0xfff2a8, 0.015, 0.05, 0.4, (Math.random() - 0.5) * 0.3, -0.1, (Math.random() - 0.5) * 0.3, 0.9);   // trailing glitter
+    // grabbed by the body, or by a controller / hand?
+    let got = Math.hypot(p.x - pl.x, p.z - pl.z) < SC.starBodyRadius && p.y > 0 && p.y < pl.y + 0.15;
+    if (!got) for (const c of controllers) { c.getWorldPosition(_cw); world.worldToLocal(_cw); if (_cw.distanceTo(p) < SC.starGrabRadius) { got = true; break; } }
+    if (got) { collectStar(s, pl); removeStar(i); continue; }
+    if (p.z > 2.5) removeStar(i);
+  }
+}
+function resetStorm() {
+  clearPucks(); HU.puffs.forEach(f => { world.remove(f.m); f.m.material.dispose(); }); HU.puffs.length = 0;
+  PK.spawnAcc = 0; PK.nextStar = SC.firstStar;
+}
+function updateStorm(dt) {
+  const pl = playerLocal(), speed = stSpeed();
+  // pucks per metre of travel (density), converted to pucks per second at this speed
+  const perM = lerp(SC.perMetreMin, SC.perMetreMax, (state.densityST - 1) / 9);
+  PK.spawnAcc += perM * speed * dt;
+  while (PK.spawnAcc >= 1) {
+    PK.spawnAcc -= 1;
+    const aimed = Math.random() < SC.aimedShare, sx = (Math.random() * 2 - 1) * SC.laneHalf, T = SC.spawnDist / speed;
+    const tx = aimed ? pl.x + (Math.random() * 2 - 1) * 0.3 : sx + (Math.random() * 2 - 1) * 0.6;
+    const y = Math.random() < SC.floorShare ? GC.puckThick / 2 + 0.005 : 0.08 + Math.random() * Math.max(0.1, pl.y - 0.05 - 0.08);
+    const z0 = -SC.spawnDist - Math.random() * speed * dt;               // spread within the frame so the flow is smooth
+    addPuck(sx, y, z0, (tx - sx) / T, 0, speed, false);
+  }
+  PK.nextStar -= dt;
+  if (PK.nextStar <= 0) { spawnStar(pl, speed); PK.nextStar = SC.starEvery * (0.6 + Math.random() * 0.8); }
+  updatePucks(dt, pl); updateStars(dt, pl, speed); updatePuffs(dt);
+}
+function updateGoAway(dt) {
+  const pl = playerLocal();
+  updateShooters(dt, pl, true); updatePucks(dt, pl); updatePuffs(dt);
+}
+function idleGoAway(dt) { updateShooters(dt, playerLocal(), false); }
+function resetPuckModes() { if (state.game === 'storm') resetStorm(); else resetGoAway(); }
+resetPuckModes();
+
 /* ============================== UI PANEL ============================== */
 const CW = 1024, CH = 786;                       // the layout is designed on this grid (704 tall for most games; Dog Attack needs the extra rows)
 const panelH = () => (state.game === 'dogattack' ? 786 : 704);
@@ -2118,6 +2416,8 @@ const insanityOnly = () => state.game === 'insanity';
 const headsupOnly = () => state.game === 'headsup';
 const areaGame = () => state.game === 'lava' || state.game === 'dogattack';
 const dogOnly = () => state.game === 'dogattack';
+const goOnly = () => state.game === 'goaway';
+const stormOnly = () => state.game === 'storm';
 const diffY = () => (state.game === 'dogattack' ? 536 : 454);     // the difficulty row and the bottom row move down in Dog Attack
 const botY = () => (state.game === 'dogattack' ? 622 : 540);
 const hasDifficulty = () => state.game === 'treadmill' || state.game === 'keepaway' || state.game === 'lava';
@@ -2139,6 +2439,10 @@ const buttons = [
   { id: 'dogdensup',   x: 420, y: 454, w: 80, h: 66, label: '+', show: dogOnly },
   { id: 'animprev',    x: 524, y: 454, w: 80, h: 66, label: '◀', show: dogOnly },
   { id: 'animnext',    x: 904, y: 454, w: 80, h: 66, label: '▶', show: dogOnly },
+  { id: 'shooterdown', x: 215, y: 372, w: 120, h: 66, label: '−', show: goOnly },
+  { id: 'shooterup',   x: 864, y: 372, w: 120, h: 66, label: '+', show: goOnly },
+  { id: 'stormdensdown', x: 215, y: 372, w: 120, h: 66, label: '−', show: stormOnly },
+  { id: 'stormdensup',   x: 864, y: 372, w: 120, h: 66, label: '+', show: stormOnly },
   { id: 'shotsdown', x: 215, y: 372, w: 120, h: 66, label: '−', show: headsupOnly },
   { id: 'shotsup',   x: 864, y: 372, w: 120, h: 66, label: '+', show: headsupOnly },
   ...CONFIG.difficulties.map((d, i) => ({ id: 'diff' + d, x: 215 + i * 194, get y() { return diffY(); }, w: 184, h: 66,
@@ -2166,7 +2470,7 @@ const fmtTime = t => {
 let lastTimerText = '';
 function drawPanel() {
   ctx.setTransform(UI_SCALE, 0, 0, UI_SCALE, 0, 0);
-  const ka = state.game === 'keepaway', ins = state.game === 'insanity', hu = state.game === 'headsup', lv = state.game === 'lava', da = state.game === 'dogattack';
+  const go = state.game === 'goaway', st = state.game === 'storm', ka = state.game === 'keepaway', ins = state.game === 'insanity', hu = state.game === 'headsup', lv = state.game === 'lava', da = state.game === 'dogattack';
   const grp = (gx, y, title, sub) => {                         // the box between a pair of − / + (or ◀ ▶) buttons
     ctx.fillStyle = '#1a2740'; rr(gx + 88, y, 284, 66, 20); ctx.fill();
     ctx.textAlign = 'center'; ctx.fillStyle = '#ffffff'; ctx.font = '700 26px system-ui, sans-serif';
@@ -2213,6 +2517,8 @@ function drawPanel() {
     : hu ? 'Dodged ' + state.dodged + '  ·  Hit ' + state.hits
     : lv ? 'Distance ' + Math.floor(state.distance) + ' m'
     : da ? ANIMALS[state.animal].plural.replace(/^./, c => c.toUpperCase()) + ' ' + daDogCount()
+    : go ? 'Dodged ' + state.dodged + '  ·  Hit ' + state.hits
+    : st ? 'Hit ' + state.hits + '  ·  Stars ' + state.stars
     : 'Passed ' + state.passed;
   ctx.fillText('Level ' + curLevel() + '  ·  ' + shownSpeed().toFixed(1) + ' m/s  ·  ' + extra, CW / 2, 236);
 
@@ -2249,6 +2555,20 @@ function drawPanel() {
     areaRows(ft(2 * DA.halfWidth * k) + ' × ' + ft(DA.depth * k) + ' ft  ·  ' + ft(DA.startDist * k) + ' ft out');
     grp(40, 454, 'DENSITY  ' + state.densityDA + ' / 10', daDogCount() + ' ' + ANIMALS[state.animal].plural);
     grp(524, 454, ANIMALS[state.animal].name, 'ANIMAL  ' + (ANIMAL_IDS.indexOf(state.animal) + 1) + ' / ' + ANIMAL_IDS.length);
+  } else if (go || st) {
+    const n = go ? state.shooters : state.densityST, mx = go ? 5 : 10, col = go ? '#e63946' : '#4cc9f0';
+    ctx.font = '700 25px system-ui, sans-serif';
+    ctx.fillText(go ? 'PLAYERS' : 'PUCKS', 40, 405);
+    ctx.fillStyle = '#1a2740'; rr(347, 372, 505, 66, 20); ctx.fill();
+    ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.font = '700 28px system-ui, sans-serif';
+    ctx.fillText(go ? (n === 1 ? '1 PLAYER SHOOTING' : n + ' PLAYERS SHOOTING') : 'PUCK DENSITY  ' + n + ' / 10', 347 + 505 / 2, 394);
+    const bw = go ? 88 : 40, gap = go ? 8 : 6, tot = mx * bw + (mx - 1) * gap;
+    for (let i = 0; i < mx; i++) { ctx.fillStyle = i < n ? col : '#2c3b58'; ctx.fillRect(347 + (505 - tot) / 2 + i * (bw + gap), 417, bw, 9); }
+    ctx.textAlign = 'left'; ctx.fillStyle = '#9fb3d1'; ctx.font = '700 25px system-ui, sans-serif';
+    ctx.fillText(go ? 'AIM' : 'STARS', 40, 487);
+    ctx.fillStyle = '#1a2740'; rr(215, 454, 769, 66, 20); ctx.fill();
+    ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.font = '700 26px system-ui, sans-serif';
+    ctx.fillText(go ? 'PUCKS COME AT FEET TO HEAD  ·  GET OUT OF THE WAY' : '★ GRAB THE STARS TO CLEAR EVERY PUCK ★', 215 + 769 / 2, 489);
   } else if (hu) {
     ctx.font = '700 25px system-ui, sans-serif';
     ctx.fillText('SHOTS', 40, 405);
@@ -2291,13 +2611,17 @@ function drawPanel() {
     if (b.id === 'densup' && state.density >= 10) base = '#1a2236';
     if (b.id === 'dogdensdown' && state.densityDA <= 1) base = '#1a2236';
     if (b.id === 'dogdensup' && state.densityDA >= 10) base = '#1a2236';
+    if (b.id === 'shooterdown' && state.shooters <= 1) base = '#1a2236';
+    if (b.id === 'shooterup' && state.shooters >= 5) base = '#1a2236';
+    if (b.id === 'stormdensdown' && state.densityST <= 1) base = '#1a2236';
+    if (b.id === 'stormdensup' && state.densityST >= 10) base = '#1a2236';
     if (b.id === 'shotsdown' && state.shots <= 1) base = '#1a2236';
     if (b.id === 'shotsup' && state.shots >= 10) base = '#1a2236';
     ctx.fillStyle = hov ? '#4cc9f0' : base;
     rr(b.x, b.y, b.w, b.h, 20); ctx.fill();
     if (sel && !hov) { ctx.strokeStyle = '#4cc9f0'; ctx.lineWidth = 4; rr(b.x, b.y, b.w, b.h, 20); ctx.stroke(); }
     ctx.fillStyle = hov ? '#0b1220' : '#ffffff';
-    const fs = b.id === 'toggle' ? 62 : (b.id.startsWith('game') || b.id.startsWith('shift') || b.id.startsWith('anim')) ? 34 : (b.id.startsWith('dens') || b.id.startsWith('dogdens') || b.id.startsWith('shots') || b.id.startsWith('area')) ? 44
+    const fs = b.id === 'toggle' ? 62 : (b.id.startsWith('game') || b.id.startsWith('shift') || b.id.startsWith('anim')) ? 34 : (b.id.startsWith('dens') || b.id.startsWith('dogdens') || b.id.startsWith('shots') || b.id.startsWith('shooter') || b.id.startsWith('stormdens') || b.id.startsWith('area')) ? 44
       : label.length > 9 ? 26 : b.h <= 70 ? 30 : 32;
     ctx.font = (b.id === 'toggle' ? '800 ' : '700 ') + fs + 'px system-ui, sans-serif';
     ctx.fillText(label, b.x + b.w / 2, b.y + b.h / 2 + 2);
@@ -2307,7 +2631,7 @@ function drawPanel() {
 drawPanel();
 
 function resetRun() {
-  state.mode = 'idle'; state.elapsed = 0; state.passed = 0; state.attacks = 0; state.hits = 0; state.dodged = 0; state.distance = 0;
+  state.mode = 'idle'; state.elapsed = 0; state.passed = 0; state.attacks = 0; state.hits = 0; state.dodged = 0; state.distance = 0; state.stars = 0;
   state.spawnTimer = 0; state.nextInterval = 0.5;
   resetPro();
   clearObstacles();
@@ -2316,6 +2640,7 @@ function resetRun() {
   resetHeadsUp();
   resetLava();
   resetDogAttack();
+  resetPuckModes();
   lastTimerText = '';
 }
 
@@ -2362,6 +2687,8 @@ function pressButton(id) {
         else if (state.game === 'headsup') state.levelHU = clamp(state.levelHU + delta, CONFIG.minLevel, CONFIG.maxLevel);
         else if (state.game === 'lava') state.levelLV = clamp(state.levelLV + delta, CONFIG.minLevel, CONFIG.maxLevel);
         else if (state.game === 'dogattack') state.levelDA = clamp(state.levelDA + delta, CONFIG.minLevel, CONFIG.maxLevel);
+        else if (state.game === 'goaway') state.levelGO = clamp(state.levelGO + delta, CONFIG.minLevel, CONFIG.maxLevel);
+        else if (state.game === 'storm') state.levelST = clamp(state.levelST + delta, CONFIG.minLevel, CONFIG.maxLevel);
         else state.level = clamp(state.level + delta, CONFIG.minLevel, CONFIG.maxLevel);
         saveSettings();
         break;
@@ -2411,6 +2738,16 @@ function pressButton(id) {
         resetDogAttack(); saveSettings();
         break;
       }
+      case 'shooterdown':
+      case 'shooterup':
+        state.shooters = clamp(state.shooters + (id === 'shooterup' ? 1 : -1), 1, 5);
+        resetRun(); saveSettings();
+        break;
+      case 'stormdensdown':
+      case 'stormdensup':
+        state.densityST = clamp(state.densityST + (id === 'stormdensup' ? 1 : -1), 1, 10);
+        saveSettings();
+        break;
       case 'shotsdown':
       case 'shotsup':
         state.shots = clamp(state.shots + (id === 'shotsup' ? 1 : -1), 1, 10);
@@ -2558,11 +2895,14 @@ renderer.setAnimationLoop(() => {
     else if (state.game === 'headsup') updateHeadsUp(dt);
     else if (state.game === 'lava') updateLava(dt);
     else if (state.game === 'dogattack') updateDogAttack(dt, true);
+    else if (state.game === 'goaway') updateGoAway(dt);
+    else if (state.game === 'storm') updateStorm(dt);
     else updateInsanity(dt);
 
-    const t = fmtTime(state.elapsed) + '|' + state.passed + '|' + state.attacks + '|' + state.hits + '|' + state.dodged + '|' + Math.floor(state.distance);
+    const t = fmtTime(state.elapsed) + '|' + state.passed + '|' + state.attacks + '|' + state.hits + '|' + state.dodged + '|' + state.stars + '|' + Math.floor(state.distance);
     if (t !== lastTimerText) { lastTimerText = t; drawPanel(); }
   } else if (state.mode === 'idle' && state.game === 'dogattack') updateDogAttack(dt, false);   // dogs stand and wag until you start
+  else if (state.mode === 'idle' && state.game === 'goaway') idleGoAway(dt);
   else if (state.mode === 'idle' && state.game === 'headsup') idleHeadsUp(dt);   // dog wags its tail while you pick settings
   else if (state.game === 'lava') idleLava(dt);   // lava shimmers
   updateTint(dt);
