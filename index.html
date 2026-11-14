@@ -38,7 +38,7 @@
 <script type="module">
 import * as THREE from 'three';
 
-const BUILD = 'storm-1';   // shown on the start screen and panel so you can tell which copy is loaded
+const BUILD = 'traffic-1';   // shown on the start screen and panel so you can tell which copy is loaded
 document.getElementById('build').textContent = 'build ' + BUILD;
 
 /* ============================== CONFIG ============================== */
@@ -175,11 +175,20 @@ const CONFIG = {
     maxPucks: 120,
     perMetreMin: 0.35, perMetreMax: 2.4,      // pucks per metre of travel at density 1 / 10 (so more pucks per second at higher speed)
     aimedShare: 0.35,          // share of pucks steered to arrive where you are standing
-    floorShare: 0.4,           // share of pucks sliding along the floor (the rest fly at random heights up to your head)
+    floorShare: 1.0,           // share of pucks sliding along the floor (1 = all of them; lower values let some fly at random heights up to your head)
     starEvery: 7, firstStar: 3,               // average seconds between stars, and the first one
-    starSize: 0.11, starYMin: 0.35,           // star size (m) and lowest height (it drifts between chest and head)
+    starSize: 0.11, starBelowHeadMin: 0.1, starBelowHeadMax: 0.4,   // star size (m), and how far below your headset it floats (min..max, so near head height)
     starGrabRadius: 0.3, starBodyRadius: 0.32,// how close a controller / your body must be to grab it
     startLevel: 2, startDensity: 4
+  },
+  sticks: {                    // STICK TRAFFIC
+    laneWidth: 2.0,            // metres: the lane the sticks fill (rows alternate between its right and left edge)
+    rowSpacing: 0.6,           // metres between one stick and the next along the lane
+    shaftLength: 1.1, bladeLength: 0.3, bladeAngle: 0.62,   // metres, metres, radians the blade bends off the shaft (0.62 = about 35 degrees)
+    thickness: 0.03, shaftWidth: 0.032, bladeWidth: 0.075,   // sticks lie flat: height and widths in metres
+    xJitter: 0.1, zJitter: 0.06, tilt: 0.1,   // random variation so it never looks stamped out
+    spawnDist: 5.0, firstRow: 1.0,            // sticks appear this far in front of you; the nearest one on loading
+    startLevel: 2
   },
   keepAway: {
     defenderScale: 1.0,        // 1.0 = roughly full-size defenceman (about 1.8 m tall)
@@ -230,6 +239,8 @@ const state = {
   shiftLV: 0,                  // The Floor Is Lava: same
   densityDA: 4,                // Dog Attack: how many animals, 1 to 10
   animal: 'dog',               // Dog Attack: dog | shark | trex
+  levelSS: CONFIG.sticks.startLevel,   // Stick Traffic speed level
+  stickMode: 'standard',       // Stick Traffic: standard | flipped | inverted
   levelGO: CONFIG.getOut.startLevel,   // Get Out Of The Way speed level
   shooters: CONFIG.getOut.startShooters, // Get Out Of The Way: number of shooters 1-5
   levelST: CONFIG.storm.startLevel,    // Puck Storm speed level
@@ -276,18 +287,20 @@ const GAMES = [
   { id: 'lava',      name: 'THE FLOOR IS LAVA' },
   { id: 'dogattack', name: 'DOG ATTACK' },
   { id: 'goaway',    name: 'GET OUT OF THE WAY' },
-  { id: 'storm',     name: 'PUCK STORM' }
+  { id: 'storm',     name: 'PUCK STORM' },
+  { id: 'sticks',    name: 'STICK TRAFFIC' }
 ];
 const IC = CONFIG.insanity;
 const HC = CONFIG.headsUp;
 const curLevel = () => (state.game === 'keepaway' ? state.levelKA : state.game === 'insanity' ? state.levelIN
   : state.game === 'headsup' ? state.levelHU : state.game === 'lava' ? state.levelLV
   : state.game === 'dogattack' ? state.levelDA : state.game === 'goaway' ? state.levelGO
-  : state.game === 'storm' ? state.levelST : state.level);
+  : state.game === 'storm' ? state.levelST : state.game === 'sticks' ? state.levelSS : state.level);
 const shownSpeed = () => (state.game === 'keepaway' ? attackSpeedFor(state.levelKA)
   : state.game === 'dogattack' ? daSpeed(state.levelDA)
   : state.game === 'goaway' ? goSpeed()
   : state.game === 'storm' ? stSpeed()
+  : state.game === 'sticks' ? speedFor(state.levelSS)
   : speedFor(state.game === 'insanity' ? state.levelIN : state.game === 'headsup' ? state.levelHU : state.game === 'lava' ? state.levelLV : state.level));
 
 /* ---------- remember settings between sessions ---------- */
@@ -304,6 +317,8 @@ const SAVE_KEY = 'stickMR.v2';
     if (Number.isInteger(s.levelHU)) state.levelHU = clamp(s.levelHU, CONFIG.minLevel, CONFIG.maxLevel);
     if (Number.isInteger(s.shots)) state.shots = clamp(s.shots, 1, 10);
     if (Number.isInteger(s.levelLV)) state.levelLV = clamp(s.levelLV, CONFIG.minLevel, CONFIG.maxLevel);
+    if (Number.isInteger(s.levelSS)) state.levelSS = clamp(s.levelSS, CONFIG.minLevel, CONFIG.maxLevel);
+    if (['standard', 'flipped', 'inverted'].includes(s.stickMode)) state.stickMode = s.stickMode;
     if (Number.isInteger(s.levelGO)) state.levelGO = clamp(s.levelGO, CONFIG.minLevel, CONFIG.maxLevel);
     if (Number.isInteger(s.levelST)) state.levelST = clamp(s.levelST, CONFIG.minLevel, CONFIG.maxLevel);
     if (Number.isInteger(s.shooters)) state.shooters = clamp(s.shooters, 1, 5);
@@ -328,7 +343,7 @@ function saveSettings() {
       levelKA: state.levelKA, levelIN: state.levelIN, density: state.density,
       levelHU: state.levelHU, shots: state.shots, levelLV: state.levelLV,
       levelDA: state.levelDA, scaleDA: state.scaleDA, scaleLV: state.scaleLV,
-      levelGO: state.levelGO, levelST: state.levelST, shooters: state.shooters, densityST: state.densityST,
+      levelSS: state.levelSS, stickMode: state.stickMode, levelGO: state.levelGO, levelST: state.levelST, shooters: state.shooters, densityST: state.densityST,
       shiftDA: state.shiftDA, shiftLV: state.shiftLV, densityDA: state.densityDA, animal: state.animal, game: state.game, panel: state.panelPose })); } catch (e) {}
 }
 
@@ -372,6 +387,13 @@ function rebuildLanes() {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(HC.laneWidth, far + CONFIG.despawnZ), guideMat);
     m.rotation.x = -Math.PI / 2;
     m.position.set(0, 0.002, -(far - CONFIG.despawnZ) / 2);
+    laneGroup.add(m);
+    return;
+  }
+  if (state.game === 'sticks') {                   // one lane for the sticks
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(CONFIG.sticks.laneWidth, CONFIG.sticks.spawnDist + CONFIG.despawnZ), guideMat);
+    m.rotation.x = -Math.PI / 2;
+    m.position.set(0, 0.002, -(CONFIG.sticks.spawnDist - CONFIG.despawnZ) / 2);
     laneGroup.add(m);
     return;
   }
@@ -2318,7 +2340,7 @@ function removeStar(i) { world.remove(PK.stars[i].g); PK.stars.splice(i, 1); }
 function spawnStar(pl, speed) {
   const s = makeStar();
   const tx = pl.x + (Math.random() * 2 - 1) * 0.5, sx = clamp((Math.random() * 2 - 1) * SC.laneHalf, -SC.laneHalf, SC.laneHalf);
-  const y = SC.starYMin + Math.random() * Math.max(0.1, (pl.y - 0.15) - SC.starYMin);
+  const y = Math.max(0.5, pl.y - SC.starBelowHeadMin - Math.random() * (SC.starBelowHeadMax - SC.starBelowHeadMin));
   const T = SC.spawnDist / speed;
   s.g.position.set(sx, y, -SC.spawnDist); s.y0 = y; s.v.set((tx - sx) / T, 0, speed);
   world.add(s.g); PK.stars.push(s);
@@ -2387,6 +2409,72 @@ function idleGoAway(dt) { updateShooters(dt, playerLocal(), false); }
 function resetPuckModes() { if (state.game === 'storm') resetStorm(); else resetGoAway(); }
 resetPuckModes();
 
+/* ============================== STICK TRAFFIC ============================== */
+/* A continuous flow of hockey sticks lying flat across one lane, in the staggered pattern of the sketch: rows
+   alternate between the right and left side of the lane, each stick reaching past the middle so you have to
+   swing back and forth between them. The knob end is always at the outside edge and the blade end always on
+   the inside. ORIENTATION decides which way the blades bend:
+     standard: every blade bends toward you,  flipped: every blade bends away from you,  inverted: a random mix. */
+const STC = CONFIG.sticks;
+const SK = { sticks: [], travel: 0, nextAt: 0, rows: 0, lastDir: 1, runLen: 0 };
+const skMat = {
+  shafts: [std(0x15171c, { roughness: 0.5 }), std(0x8c1c24, { roughness: 0.5 }), std(0x14213d, { roughness: 0.5 }), std(0x2f6b3a, { roughness: 0.5 })],
+  blade: std(0xd9cfc0, { roughness: 0.6 }), tape: std(0xf4f4f4, { roughness: 0.7 }), tapeDark: std(0x1a1a1a, { roughness: 0.7 })
+};
+function makeTrafficStick(side, bladeZ) {
+  // side: +1 = knob at the right edge (stick extends left), -1 = knob at the left edge. bladeZ: +1 toward you, -1 away.
+  const g = new THREE.Group(), s = side, a = STC.bladeAngle;
+  const shaftM = skMat.shafts[Math.floor(Math.random() * skMat.shafts.length)];
+  const Ls = STC.shaftLength, Lb = STC.bladeLength, th = STC.thickness, ww = STC.shaftWidth, bw = STC.bladeWidth;
+  const bl = bw / 2;
+  // everything is built relative to the knob end at (0,0,0) and then centred
+  const sh = box(Ls, th, ww, shaftM, -s * Ls / 2, th / 2, 0); g.add(sh);
+  const knob = box(0.14, th * 1.3, ww * 1.15, skMat.tape, -s * 0.07, th * 0.65, 0); g.add(knob);        // taped butt end
+  const dx = -s * Math.cos(a), dz = bladeZ * Math.sin(a);                                                 // blade direction
+  const ex = -s * Ls, bx = ex + dx * Lb / 2, bz = dz * Lb / 2;
+  const hosel = box(0.12, th, ww * 1.25, shaftM, ex - s * 0.02, th / 2, 0);     // thicker heel
+  g.add(hosel);
+  const bladeM = box(Lb, th, bw, skMat.blade, bx, th / 2, bz); bladeM.rotation.y = Math.atan2(-dz, dx); g.add(bladeM);
+  const tp = box(Lb * 0.85, th * 1.15, bw * 0.9, skMat.tapeDark, bx, th / 2, bz); tp.rotation.y = bladeM.rotation.y; tp.scale.y = 0.6; tp.position.y = th * 0.5; g.add(tp);
+  g.children.forEach(c => { c.position.x += s * (Ls + Math.abs(dx) * Lb) / 2; c.position.z -= dz * Lb / 2; });         // centre the whole stick
+  const wrap = new THREE.Group(); wrap.add(g);
+  wrap.userData.extent = Ls + Math.abs(dx) * Lb;                                                          // length across the lane
+  return wrap;
+}
+function pickBladeDir() {
+  if (state.stickMode === 'standard') return 1;
+  if (state.stickMode === 'flipped') return -1;
+  let d = Math.random() < 0.5 ? 1 : -1;                                                                   // inverted: random, but never a long run
+  if (d === SK.lastDir && SK.runLen >= 2) d = -d;
+  SK.runLen = d === SK.lastDir ? SK.runLen + 1 : 1; SK.lastDir = d;
+  return d;
+}
+function spawnStickRow(z) {
+  const side = SK.rows % 2 === 0 ? 1 : -1; SK.rows++;
+  const st = makeTrafficStick(side, pickBladeDir());
+  const half = STC.laneWidth / 2, ext = st.userData.extent;
+  const xc = side * (half - ext / 2) + (Math.random() * 2 - 1) * STC.xJitter;
+  st.position.set(xc, 0, z + (Math.random() * 2 - 1) * STC.zJitter);
+  st.rotation.y = (Math.random() * 2 - 1) * STC.tilt;
+  world.add(st); SK.sticks.push(st);
+}
+function clearSticks() { SK.sticks.forEach(s => world.remove(s)); SK.sticks.length = 0; }
+function resetSticks() {
+  clearSticks(); SK.travel = 0; SK.rows = 0; SK.lastDir = 1; SK.runLen = 0;
+  if (state.game !== 'sticks') return;
+  let z = -STC.firstRow;
+  while (z > -STC.spawnDist) { spawnStickRow(z); z -= STC.rowSpacing; }
+  SK.nextAt = Math.max(0.01, -z - STC.spawnDist);   // distance until the next row reaches the spawn line
+}
+function updateSticks(dt) {
+  const sp = speedFor(state.levelSS) * dt;
+  SK.sticks.forEach(s => { s.position.z += sp; });
+  for (let i = SK.sticks.length - 1; i >= 0; i--) if (SK.sticks[i].position.z > CONFIG.despawnZ + 0.8) { world.remove(SK.sticks[i]); SK.sticks.splice(i, 1); }
+  SK.travel += sp;
+  while (SK.travel >= SK.nextAt) { SK.travel -= SK.nextAt; spawnStickRow(-STC.spawnDist + SK.travel); SK.nextAt = STC.rowSpacing; }
+}
+resetSticks();
+
 /* ============================== UI PANEL ============================== */
 const CW = 1024, CH = 786;                       // the layout is designed on this grid (704 tall for most games; Dog Attack needs the extra rows)
 const panelH = () => (state.game === 'dogattack' ? 786 : 704);
@@ -2417,6 +2505,7 @@ const headsupOnly = () => state.game === 'headsup';
 const areaGame = () => state.game === 'lava' || state.game === 'dogattack';
 const dogOnly = () => state.game === 'dogattack';
 const goOnly = () => state.game === 'goaway';
+const sticksOnly = () => state.game === 'sticks';
 const stormOnly = () => state.game === 'storm';
 const diffY = () => (state.game === 'dogattack' ? 536 : 454);     // the difficulty row and the bottom row move down in Dog Attack
 const botY = () => (state.game === 'dogattack' ? 622 : 540);
@@ -2439,6 +2528,8 @@ const buttons = [
   { id: 'dogdensup',   x: 420, y: 454, w: 80, h: 66, label: '+', show: dogOnly },
   { id: 'animprev',    x: 524, y: 454, w: 80, h: 66, label: '◀', show: dogOnly },
   { id: 'animnext',    x: 904, y: 454, w: 80, h: 66, label: '▶', show: dogOnly },
+  ...['standard', 'flipped', 'inverted'].map((m, i) => ({ id: 'orient' + m, x: 215 + i * 262, y: 372, w: 247, h: 66,
+      label: m.toUpperCase(), sel: () => state.stickMode === m, show: sticksOnly })),
   { id: 'shooterdown', x: 215, y: 372, w: 120, h: 66, label: '−', show: goOnly },
   { id: 'shooterup',   x: 864, y: 372, w: 120, h: 66, label: '+', show: goOnly },
   { id: 'stormdensdown', x: 215, y: 372, w: 120, h: 66, label: '−', show: stormOnly },
@@ -2470,7 +2561,7 @@ const fmtTime = t => {
 let lastTimerText = '';
 function drawPanel() {
   ctx.setTransform(UI_SCALE, 0, 0, UI_SCALE, 0, 0);
-  const go = state.game === 'goaway', st = state.game === 'storm', ka = state.game === 'keepaway', ins = state.game === 'insanity', hu = state.game === 'headsup', lv = state.game === 'lava', da = state.game === 'dogattack';
+  const sk = state.game === 'sticks', go = state.game === 'goaway', st = state.game === 'storm', ka = state.game === 'keepaway', ins = state.game === 'insanity', hu = state.game === 'headsup', lv = state.game === 'lava', da = state.game === 'dogattack';
   const grp = (gx, y, title, sub) => {                         // the box between a pair of − / + (or ◀ ▶) buttons
     ctx.fillStyle = '#1a2740'; rr(gx + 88, y, 284, 66, 20); ctx.fill();
     ctx.textAlign = 'center'; ctx.fillStyle = '#ffffff'; ctx.font = '700 26px system-ui, sans-serif';
@@ -2517,6 +2608,7 @@ function drawPanel() {
     : hu ? 'Dodged ' + state.dodged + '  ·  Hit ' + state.hits
     : lv ? 'Distance ' + Math.floor(state.distance) + ' m'
     : da ? ANIMALS[state.animal].plural.replace(/^./, c => c.toUpperCase()) + ' ' + daDogCount()
+    : sk ? 'Sticks ' + SK.rows
     : go ? 'Dodged ' + state.dodged + '  ·  Hit ' + state.hits
     : st ? 'Hit ' + state.hits + '  ·  Stars ' + state.stars
     : 'Passed ' + state.passed;
@@ -2555,6 +2647,13 @@ function drawPanel() {
     areaRows(ft(2 * DA.halfWidth * k) + ' × ' + ft(DA.depth * k) + ' ft  ·  ' + ft(DA.startDist * k) + ' ft out');
     grp(40, 454, 'DENSITY  ' + state.densityDA + ' / 10', daDogCount() + ' ' + ANIMALS[state.animal].plural);
     grp(524, 454, ANIMALS[state.animal].name, 'ANIMAL  ' + (ANIMAL_IDS.indexOf(state.animal) + 1) + ' / ' + ANIMAL_IDS.length);
+  } else if (sk) {
+    ctx.font = '700 25px system-ui, sans-serif';
+    ctx.fillText('BLADES', 40, 405);
+    ctx.fillText('LAYOUT', 40, 487);
+    ctx.fillStyle = '#1a2740'; rr(215, 454, 769, 66, 20); ctx.fill();
+    ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.font = '700 26px system-ui, sans-serif';
+    ctx.fillText({ standard: 'ALL BLADES POINT AT YOU  ·  KNOBS OUT', flipped: 'ALL BLADES POINT AWAY  ·  KNOBS OUT', inverted: 'BLADES MIXED, TOWARD AND AWAY  ·  KNOBS OUT' }[state.stickMode], 215 + 769 / 2, 489);
   } else if (go || st) {
     const n = go ? state.shooters : state.densityST, mx = go ? 5 : 10, col = go ? '#e63946' : '#4cc9f0';
     ctx.font = '700 25px system-ui, sans-serif';
@@ -2641,6 +2740,7 @@ function resetRun() {
   resetLava();
   resetDogAttack();
   resetPuckModes();
+  resetSticks();
   lastTimerText = '';
 }
 
@@ -2687,6 +2787,7 @@ function pressButton(id) {
         else if (state.game === 'headsup') state.levelHU = clamp(state.levelHU + delta, CONFIG.minLevel, CONFIG.maxLevel);
         else if (state.game === 'lava') state.levelLV = clamp(state.levelLV + delta, CONFIG.minLevel, CONFIG.maxLevel);
         else if (state.game === 'dogattack') state.levelDA = clamp(state.levelDA + delta, CONFIG.minLevel, CONFIG.maxLevel);
+        else if (state.game === 'sticks') state.levelSS = clamp(state.levelSS + delta, CONFIG.minLevel, CONFIG.maxLevel);
         else if (state.game === 'goaway') state.levelGO = clamp(state.levelGO + delta, CONFIG.minLevel, CONFIG.maxLevel);
         else if (state.game === 'storm') state.levelST = clamp(state.levelST + delta, CONFIG.minLevel, CONFIG.maxLevel);
         else state.level = clamp(state.level + delta, CONFIG.minLevel, CONFIG.maxLevel);
@@ -2738,6 +2839,11 @@ function pressButton(id) {
         resetDogAttack(); saveSettings();
         break;
       }
+      case 'orientstandard':
+      case 'orientflipped':
+      case 'orientinverted':
+        state.stickMode = id.slice(6); resetRun(); saveSettings();
+        break;
       case 'shooterdown':
       case 'shooterup':
         state.shooters = clamp(state.shooters + (id === 'shooterup' ? 1 : -1), 1, 5);
@@ -2897,6 +3003,7 @@ renderer.setAnimationLoop(() => {
     else if (state.game === 'dogattack') updateDogAttack(dt, true);
     else if (state.game === 'goaway') updateGoAway(dt);
     else if (state.game === 'storm') updateStorm(dt);
+    else if (state.game === 'sticks') updateSticks(dt);
     else updateInsanity(dt);
 
     const t = fmtTime(state.elapsed) + '|' + state.passed + '|' + state.attacks + '|' + state.hits + '|' + state.dodged + '|' + state.stars + '|' + Math.floor(state.distance);

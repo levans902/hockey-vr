@@ -15,6 +15,9 @@ Use the ◀ ▶ arrows at the top of the floating panel to switch modes. Each mo
 | **Insanity** | Toe drags and tight, fancy hands through dense clutter in one wide lane. |
 | **Heads Up!** | Stickhandling a wiggling zig-zag training aid while ducking cannonballs from a French bulldog. |
 | **The Floor Is Lava** | Keeping your puck on a winding path that slides toward you across a lane of lava. |
+| **Get Out Of The Way** | 1 to 5 hockey players slap pucks at you, aimed anywhere from your feet to your headset. Dodge them. |
+| **Puck Storm** | A constant flow of pucks at random heights and places, mixed with sparkling power-up stars. |
+| **Stick Traffic** | A continuous flow of hockey sticks lying across one lane in a staggered right/left pattern. |
 | **Dog Attack** | A static level: stickhandling around little animals (French bulldogs, sharks or T-rexes) wandering about in a small patch of floor. |
 
 ### Endless Object Treadmill
@@ -91,6 +94,26 @@ A thin white line across the lane marks where the game assumes your real puck is
 
 Speed uses levels 1 to 10, the same speeds as the treadmill (1.0 to 3.7 m/s). The path is shaped so it never bends tighter than its own width, and the sideways speed it asks of your hands is capped for each difficulty. At high speed levels the bends are therefore gentler but come much more often.
 
+### Get Out Of The Way
+Between 1 and 5 hockey players (each in a different colour jersey) stand in a fan about 4.5 m in front of you. Each one pulls its stick back while the puck on its blade glows and pings (the warning), then slaps it at you. The aim point is picked at the instant of the shot, anywhere between your feet and your headset (so it can be a floor slider or head high), with a small random sideways error. A puck that passes within 26 cm of your body below head height is a hit and flashes the view red, exactly like Heads Up!. Sidestep, duck or jump to get out of the way.
+- **SPEED − / +:** puck speed, 3.3 m/s at level 1 up to 10.5 m/s at level 10.
+- **PLAYERS − / +:** how many shoot, 1 to 5. Changing it restarts the run.
+- The panel counts **Dodged** and **Hit**.
+
+### Puck Storm
+Pucks flow toward you constantly from about 7 m out, like the Insanity objects but with no lane: random places, all of them sliding along the floor so you can stickhandle around them. About a third are steered to arrive where you are standing. A puck that reaches your body is a hit and flashes red.
+- **SPEED − / +:** how fast everything flows (same speeds as the Treadmill, 1.0 to 3.7 m/s).
+- **PUCK DENSITY − / +:** 1 to 10, pucks per metre of travel (about 0.35 to 2.4), so a higher speed also means more pucks per second.
+- **Stars:** a small gold star drifts by every 7 seconds or so 10 to 40 cm below your headset height, so it is easy to reach. It spins, glows and sparkles. Touch it with a controller, your hand or your body to grab it: a golden burst wipes every puck currently in the air. The panel counts **Stars**.
+
+### Stick Traffic
+A continuous flow of hockey sticks lying flat across one 2 m lane, in the staggered pattern of the sketch: rows alternate between the right and left side of the lane and each stick reaches a little past the middle, so you swing back and forth around them. A small random variation in position and angle keeps it from looking stamped out. The knob (taped butt end) is always at the outside edge and the blade always at the inner end.
+- **SPEED − / +:** how fast the sticks flow (1.0 to 3.7 m/s, like the Treadmill).
+- **STANDARD:** every blade bends toward you.
+- **FLIPPED:** every blade bends away from you.
+- **INVERTED:** a random mix of both (never more than three in a row the same way).
+- Sticks don't count hits: it's your real puck and your own judgement, like the Treadmill.
+
 ### Dog Attack
 
 A static level: nothing slides toward you. A rectangle on the floor, marked with a faint green fill and a bright border, holds a handful of French bulldogs that wander around inside it. They walk in random directions, change direction at random, sometimes stop for a sniff, turn away from the border and steer around each other, so there is always something moving that you have to stickhandle around. They are about as long as an adult sneaker (0.3 m). Each has its own coat colour, and they never overlap.
@@ -147,6 +170,9 @@ A floating panel sits about 1 m in front of you near eye level. Aim a controller
 | **DENSITY − / +** (Dog Attack) | How many animals, 1 to 10. |
 | **ANIMAL ◀ / ▶** | Dog Attack: dog, shark or T-rex. |
 | **SHOTS − / +** | Heads Up! only: cannon shot volume, 1 to 10. |
+| **PLAYERS − / +** | Get Out Of The Way: number of shooters, 1 to 5. |
+| **PUCK DENSITY − / +** | Puck Storm: how many pucks, 1 to 10. |
+| **STANDARD / FLIPPED / INVERTED** | Stick Traffic: which way the blades point. |
 | **RESET** | Stops the session and clears the timer, counts and floor. |
 | **MENU HOME** | Puts the panel back in its default spot after you have dragged it. |
 | **RECENTER** | Re-anchors the play area to where you are standing and facing. The panel keeps its position relative to you, including a spot you dragged it to. |
@@ -224,6 +250,10 @@ Everything adjustable is in the `CONFIG` object near the top of the script in `i
 | `lava.lavaWidth`, `startStraight`, `puckLine`, `pathFill` | The Floor Is Lava: width of the lava, how long the path is straight at the start, whether the puck line is shown, and how solid the path looks (0 is clear, 1 is solid slate; the bright edges always show). |
 | `dogAttack.startDist`, `halfWidth`, `depth`, `scaleMin`, `scaleMax` | Dog Attack: where the play area starts, how far it reaches sideways and ahead (all 3 ft by default), and the PLAYSPACE range. |
 | `dogAttack.sizes`, `densMin`, `densMax`, `shiftMax`, `shiftStep`, `sepDist`, `turnRate`, `baseSpeed`, `speedStep`, `perDifficulty` | Dog Attack: how big each animal looks, the animals per m² at density 1 and 10, the shift limits and step, , how much room they keep, how fast they turn and walk, and how each difficulty changes how often they change direction, turn sharply and stop. |
+| `getOut.distance`, `spacing`, `speedBase`, `speedStep`, `bodyRadius`, `floorY`, `aimNoise`, `interval`, `telegraphBase` | Get Out Of The Way: how far the shooters stand, their spacing, puck speed at level 0 and per level, how close counts as a hit, the lowest aim height, shot inaccuracy, average seconds between one player's shots, and the warning time. |
+| `storm.spawnDist`, `laneHalf`, `perMetreMin`, `perMetreMax`, `aimedShare`, `floorShare`, `starEvery`, `starSize`, `starGrabRadius` | Puck Storm: where pucks appear, pucks per metre at density 1 and 10, how many are aimed at you and how many slide on the floor, star frequency, size and grab distance. |
+| `sticks.laneWidth`, `rowSpacing`, `shaftLength`, `bladeLength`, `bladeAngle`, `xJitter`, `zJitter`, `tilt` | Stick Traffic: lane width, distance between sticks, stick size and blade bend, and the random variation. |
+| `storm.floorShare`, `starBelowHeadMin`, `starBelowHeadMax` | Puck Storm: share of pucks on the floor (1 = all), and how far below your headset the stars float. |
 | `lava.scaleMin`, `scaleMax`, `shiftMax`, `shiftStep`, `edgeMargin` | The Floor Is Lava: PLAYSPACE range, shift limit and step and how far inside the lava the path stays. |
 | `lava.perDifficulty` | The Floor Is Lava: for each difficulty, `width` of the path, `sMax` (steepest bend), `turnMin` / `turnMax` (distance between bends), `aMax` (how sharp a bend can be), `xMax` (how far it wanders) and `latMax` (the most sideways speed it can ask of you). |
 | `headsUp.telegraphBase`, `intervalMax`, `intervalMin`, `burstChanceMax` | Heads Up!: warning time before a shot, time between shots at shots 1 and 10, and how often bursts happen. |
