@@ -15,6 +15,7 @@ Use the ◀ ▶ arrows at the top of the floating panel to switch modes. Each mo
 | **Insanity** | Toe drags and tight, fancy hands through dense clutter in one wide lane. |
 | **Heads Up!** | Stickhandling a wiggling zig-zag training aid while ducking cannonballs from a French bulldog. |
 | **The Floor Is Lava** | Keeping your puck on a winding path that slides toward you across a lane of lava. |
+| **Dog Attack** | A static level: stickhandling around little animals (French bulldogs, sharks or T-rexes) wandering about in a small patch of floor. |
 
 ### Endless Object Treadmill
 
@@ -51,9 +52,11 @@ Opposing defencemen skate around you in the zone in front of and beside you, nev
 
 ### Insanity
 
+The guaranteed route through the clutter zig-zags across the lane and is kept narrow, and a guard watches every 0.35 m strip of the lane, adding a filler object whenever a strip has been empty too long. At the default density the longest empty stretch is about 3 to 8 m, instead of 40 to 50 m before, so there is no hiding in the middle.
+
 One lane, as wide as three treadmill lanes (1.65 m), packed with objects of every size. Instead of switching lanes, you have to work through the clutter with toe drags and fancy handles.
 
-- **Big and odd shapes:** besides the six treadmill objects, Insanity adds hockey sticks lying flat at all sorts of angles (mostly diagonal or across the lane), a goalie stick, a crossed pair of sticks, two kinds of hockey bag, a goalie pad, a bucket of pucks, a helmet, a wide goal net and an ice resurfacer that fills one whole half of the lane. A puck can't slide over a flat stick, so these force wider moves, lifts and toe drags instead of just dangling around thin objects. Every object has a footprint (a line plus a radius) that the generator keeps the gap around, so long objects block whole strips of the lane and the gaps vary a lot in size and shape.
+- **Big and odd shapes:** Insanity uses the treadmill objects except the dynamite, and adds hockey sticks lying flat at all sorts of angles (mostly diagonal or across the lane), a goalie stick, a crossed pair of sticks, two kinds of hockey bag, a goalie pad, a bucket of pucks, a helmet, a wide goal net, a low team bench and an ice resurfacer that fills one whole half of the lane. A puck can't slide over a flat stick, so these force wider moves, lifts and toe drags instead of just dangling around thin objects. Every object has a footprint (a line plus a radius) that the generator keeps the gap around, so long objects block whole strips of the lane and the gaps vary a lot in size and shape.
 - **Density 1 to 10:** density 1 is a sparse scatter with wide gaps. At density 10 neighbouring objects are only about 20 cm apart.
 - **Always passable:** every new object is checked so that a route through the lane still exists. It can twist and turn, and at the highest densities it is tight.
 - **Speed:** levels 1 to 10, the same speeds as the treadmill.
@@ -73,9 +76,11 @@ At the far end of the lane a French bulldog with a cannon strapped to its back w
 
 ### The Floor Is Lava
 
-One continuous lane of glowing lava, 3.2 m wide, with a safe path winding through it. The path slides toward you at the chosen speed, so you keep stickhandling your real puck sideways to stay on it while it bends left and right. The path is 0.85 to 1.1 m wide depending on difficulty, which leaves room for real stickhandling. The lava is drawn only beside the path, not under it, and the path itself is almost clear with bright edges and a faint dashed centre line, so your puck stays easy to see on it. Lava drifts along with the path so you can feel the speed.
+One continuous lane of glowing lava, 3.2 m wide at 100% playspace, with a safe path winding through it. The path slides toward you at the chosen speed, so you keep stickhandling your real puck sideways to stay on it while it bends left and right. The path is 0.85 to 1.1 m wide depending on difficulty, which leaves room for real stickhandling. The lava is drawn only beside the path, not under it, and the path itself is almost clear with bright edges and a faint dashed centre line, so your puck stays easy to see on it. Lava drifts along with the path so you can feel the speed.
 
 A thin white line across the lane marks where the game assumes your real puck is (the same 0.55 m in front of you that Keep Away uses). Watch the path where it crosses that line. The game can't see your puck, so you judge whether you stayed on the path yourself, like the other modes. The panel counts the distance you have travelled along the path.
+
+**PLAYSPACE − / +** (50% to 150%, steps of 10%) scales the lava's width and how far ahead it reaches, so the whole thing fits your room, and the path never leaves the lava. Below 100% the path itself narrows slightly (to 80% of its width at 50%) so it can still wander. It never gets wider than the values below.
 
 | Difficulty | Path |
 | --- | --- |
@@ -85,6 +90,19 @@ A thin white line across the lane marks where the game assumes your real puck is
 | **Pro** | Lots of turns and twists, up to 0.9 m either way, often swinging straight into the opposite direction. The narrowest path (0.85 m). |
 
 Speed uses levels 1 to 10, the same speeds as the treadmill (1.0 to 3.7 m/s). The path is shaped so it never bends tighter than its own width, and the sideways speed it asks of your hands is capped for each difficulty. At high speed levels the bends are therefore gentler but come much more often.
+
+### Dog Attack
+
+A static level: nothing slides toward you. A rectangle on the floor, marked with a faint green fill and a bright border, holds a handful of French bulldogs that wander around inside it. They walk in random directions, change direction at random, sometimes stop for a sniff, turn away from the border and steer around each other, so there is always something moving that you have to stickhandle around. They are about as long as an adult sneaker (0.3 m). Each has its own coat colour, and they never overlap.
+
+The rectangle starts 3 ft in front of you and reaches 3 ft to your left, 3 ft to your right, and 3 ft ahead of its near edge (6 ft wide by 3 ft deep).
+
+- **PLAYSPACE − / +:** scales the whole rectangle, including how far in front of you it starts, from 50% to 200% in steps of 10%. The animals stay the same size. A small playspace can't hold as many, so the count drops to what fits, and the panel shows the count in use.
+- **SHIFT ◀ / ▶:** slides the whole play area left or right in 0.1 m steps (up to 1.5 m each way), so it lines up with where you actually stand. It also exists in The Floor Is Lava. The panel shows how far it is shifted in feet.
+- **DENSITY − / +:** 1 to 10, animals per square metre. The count grows with the playspace size, capped at what physically fits.
+- **ANIMAL ◀ / ▶:** French bulldog, shark or T-rex. Sharks glide with a swishing tail, T-rexes stomp on two legs. All are about the size of a sneaker.
+- **Speed 1 to 10:** how fast the dogs walk, 0.3 to 1.1 m/s.
+- **EASY / MEDIUM / HARD / PRO:** 4, 6, 8 or 11 dogs, changing direction more often and stopping less as you go up.
 
 ## Objects
 
@@ -97,7 +115,7 @@ Each object is built from Three.js shapes, so there are no external assets.
 - **Hockey gloves:** a pair lying flat on the floor
 - **Mini net:** a red-framed net with translucent netting
 
-The Treadmill uses all six. Insanity uses these six plus ten bigger, oddly shaped ones:
+The Treadmill uses all six. Insanity leaves out the dynamite and the tall, thin objects (bottle and pylon) turn up much less often there, so you can't just sit in a gap between them. It adds eleven bigger, wider ones:
 
 - **Hockey stick** (two sizes, two colours): lying flat, mostly at diagonals across the lane
 - **Goalie stick:** long shaft with a wide paddle
@@ -107,6 +125,7 @@ The Treadmill uses all six. Insanity uses these six plus ten bigger, oddly shape
 - **Bucket of pucks**
 - **Helmet**
 - **Wide net:** a 1.1 m wide red-framed goal net
+- **Team bench:** a low, solid bench 1.2 m long
 - **Ice resurfacer:** 1.5 m long and 0.84 m wide, so exactly half the lane, always on the left or the right half and usually pointing at you. It is the rarest object.
 
 Keep Away uses full-size defencemen in red jerseys instead. Heads Up! uses a zig-zag aid of black pods and rods, a French bulldog and a cannon.
@@ -123,6 +142,10 @@ A floating panel sits about 1 m in front of you near eye level. Aim a controller
 | **3 / 4 / 5 LANES** | Treadmill only: number of lanes. |
 | **EASY / MEDIUM / HARD / PRO** | Treadmill, Keep Away and The Floor Is Lava: layout, defender count or how twisty the path is. |
 | **DENSITY − / +** | Insanity only: clutter level, 1 to 10. |
+| **PLAYSPACE − / +** | Dog Attack and The Floor Is Lava: scales the play area. |
+| **SHIFT ◀ / ▶** | Dog Attack and The Floor Is Lava: slides the play area left or right. |
+| **DENSITY − / +** (Dog Attack) | How many animals, 1 to 10. |
+| **ANIMAL ◀ / ▶** | Dog Attack: dog, shark or T-rex. |
 | **SHOTS − / +** | Heads Up! only: cannon shot volume, 1 to 10. |
 | **RESET** | Stops the session and clears the timer, counts and floor. |
 | **MENU HOME** | Puts the panel back in its default spot after you have dragged it. |
@@ -138,6 +161,7 @@ The panel also shows a timer, the level and speed, and either how many objects h
 | --- | --- | --- |
 | **Treadmill / Insanity** | 1.0 m/s | 3.7 m/s |
 | **Keep Away** (lunge speed) | 1.4 m/s | 3.7 m/s |
+| **Dog Attack** (dogs walking) | 0.3 m/s | 1.1 m/s |
 | **Heads Up!** (training aid) | 1.0 m/s | 3.7 m/s |
 | **The Floor Is Lava** (path) | 1.0 m/s | 3.7 m/s |
 
@@ -190,6 +214,7 @@ Everything adjustable is in the `CONFIG` object near the top of the script in `i
 | `hardIntervalJitter`, `hardDepthJitter` | How irregular Hard feels. |
 | `proExtra`, `proIntervalJitter`, `proMinDepthGap`, `proShiftTime`, `proMaxSafeHold`, `proMaxEmpty` | Treadmill Pro density and fairness. A smaller `proShiftTime` is harder. |
 | `insanity.gapMax`, `gapMin`, `pathClear`, `pathSlope` | Insanity: clear space between objects at density 1 and 10, the room the route through the clutter must leave for your puck, and how sharply that route may turn. |
+| `insanity.openMaxLow`, `openMaxHigh`, `guardGap`, `stripW`, `pathMinHalf` | Insanity's open-strip guard: the longest stretch (m) any 0.35 m strip of the lane may stay empty at density 1 and 10, how tight the filler objects may sit, and how narrow the guaranteed route is. |
 | `keepAway.defenderScale` | How big the defenders look (1.0 is full size). |
 | `keepAway.puckOffset` | Where the game assumes your puck is in front of you. |
 | `keepAway.maxRadius`, `attackGap`, `perDifficulty` | Zone size, spacing between attacks, and each difficulty's defender count and aggression. |
@@ -197,10 +222,13 @@ Everything adjustable is in the `CONFIG` object near the top of the script in `i
 | `headsUp.dogDistance`, `dogScale`, `dogRangeX`, `dogRangeZ`, `dogSpeed` | Heads Up!: how far away the bulldog is, how big it looks, and how much and how fast it wanders. |
 | `headsUp.ballRadius`, `ballSpeedBase`, `ballSpeedStep`, `arcHeight`, `hitRadius`, `aimNoise` | Heads Up!: cannonball size, speed, how much it lobs, how close counts as a hit, and shot inaccuracy. |
 | `lava.lavaWidth`, `startStraight`, `puckLine`, `pathFill` | The Floor Is Lava: width of the lava, how long the path is straight at the start, whether the puck line is shown, and how solid the path looks (0 is clear, 1 is solid slate; the bright edges always show). |
+| `dogAttack.startDist`, `halfWidth`, `depth`, `scaleMin`, `scaleMax` | Dog Attack: where the play area starts, how far it reaches sideways and ahead (all 3 ft by default), and the PLAYSPACE range. |
+| `dogAttack.sizes`, `densMin`, `densMax`, `shiftMax`, `shiftStep`, `sepDist`, `turnRate`, `baseSpeed`, `speedStep`, `perDifficulty` | Dog Attack: how big each animal looks, the animals per m² at density 1 and 10, the shift limits and step, , how much room they keep, how fast they turn and walk, and how each difficulty changes how often they change direction, turn sharply and stop. |
+| `lava.scaleMin`, `scaleMax`, `shiftMax`, `shiftStep`, `edgeMargin` | The Floor Is Lava: PLAYSPACE range, shift limit and step and how far inside the lava the path stays. |
 | `lava.perDifficulty` | The Floor Is Lava: for each difficulty, `width` of the path, `sMax` (steepest bend), `turnMin` / `turnMax` (distance between bends), `aMax` (how sharp a bend can be), `xMax` (how far it wanders) and `latMax` (the most sideways speed it can ask of you). |
 | `headsUp.telegraphBase`, `intervalMax`, `intervalMin`, `burstChanceMax` | Heads Up!: warning time before a shot, time between shots at shots 1 and 10, and how often bursts happen. |
 | `headsUp.tintPeak`, `tintFade` | Heads Up!: strength of the red hit tint (0 to 1) and how long it takes to fade. |
-| `panelDistance`, `panelWidth`, `panelHeightOffset` | Size and position of the control panel. |
+| `panelScale`, `panelDistance`, `panelWidth`, `panelHeightOffset` | Size and position of the control panel. `panelScale` (1.25 by default) makes the whole menu bigger while the text stays the same size; set it to 1 for the old size. |
 
 ## Troubleshooting
 
@@ -208,6 +236,7 @@ Everything adjustable is in the `CONFIG` object near the top of the script in `i
 - **No passthrough:** make sure passthrough is enabled in your Quest settings, and enter with the button on the page.
 - **Panel or play area in the wrong place:** press **RECENTER** while standing where you want to train. If you dragged the panel somewhere awkward, press **MENU HOME**.
 - **Panel in the way:** grab its background and drag it somewhere else.
+- **Dog Attack or Floor Is Lava runs outside your room:** use **PLAYSPACE −** until the area fits.
 - **Panel too high or low:** adjust `panelHeightOffset` in `CONFIG`.
 - **Can't press panel buttons:** aim the controller or pinch ray at the button until it highlights, then pull the trigger or pinch.
 - **Changes don't show up:** the Quest Browser caches pages heavily. Check the small `build` label on the start screen and at the bottom of the panel to see which copy you have, then clear the site data in the browser settings and reload.

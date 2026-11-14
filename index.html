@@ -29,7 +29,7 @@
 <body>
 <div id="ui">
   <h1>🏒 SickMitts VR</h1>
-  <p>Clear your floor, put on your Quest 3, and tap below. Use the arrows on the floating panel to pick a game: <b>Endless Object Treadmill</b> sends objects down several lanes, <b>Keep Away</b> puts opposing defencemen on the ice around you, <b>Insanity</b> fills one wide lane with clutter that needs toe drags and fancy hands, <b>Heads Up!</b> sends a wiggling zig-zag training aid down the lane while a French bulldog fires cannonballs at your head, so you have to duck while you stickhandle, <b>The Floor Is Lava</b> turns the floor into lava with a winding path you have to keep your puck on, and <b>Dog Attack</b> fills a small patch of floor with wandering French bulldogs you have to stickhandle around. Point a controller (or pinch with your hand) at the panel to adjust the settings, then start.</p>
+  <p>Clear your floor, put on your Quest 3, and tap below. Use the arrows on the floating panel to pick a game: <b>Endless Object Treadmill</b> sends objects down several lanes, <b>Keep Away</b> puts opposing defencemen on the ice around you, <b>Insanity</b> fills one wide lane with clutter that needs toe drags and fancy hands, <b>Heads Up!</b> sends a wiggling zig-zag training aid down the lane while a French bulldog fires cannonballs at your head, so you have to duck while you stickhandle, <b>The Floor Is Lava</b> turns the floor into lava with a winding path you have to keep your puck on, and <b>Dog Attack</b> fills a small patch of floor with wandering French bulldogs (or sharks, or T-rexes) you have to stickhandle around. Point a controller (or pinch with your hand) at the panel to adjust the settings, then start.</p>
   <button id="enter" disabled>Checking MR support…</button>
   <div id="msg"></div>
   <div id="build" style="color:#5f7391;font-size:.8rem"></div>
@@ -38,7 +38,7 @@
 <script type="module">
 import * as THREE from 'three';
 
-const BUILD = 'dogs-2';   // shown on the start screen and panel so you can tell which copy is loaded
+const BUILD = 'zoo-1';   // shown on the start screen and panel so you can tell which copy is loaded
 document.getElementById('build').textContent = 'build ' + BUILD;
 
 /* ============================== CONFIG ============================== */
@@ -75,8 +75,15 @@ const CONFIG = {
     chunkLength: 0.8,          // metres of clutter generated at a time
     targetMin: 0.7, targetMax: 5.0,   // objects per metre of lane at density 1 / density 10
     gapMax: 0.95, gapMin: 0.2,        // clear floor between neighbouring objects at density 1 / 10
-    pathSlope: 0.4,            // how fast the guaranteed open path may wander sideways
+    pathSlope: 0.9,            // steepest sideways slope of the guaranteed open route (sideways m per forward m), at slow speeds
+    pathSlopeMin: 0.4,         // ... and the gentlest it is allowed to become at high speeds
+    pathLatMax: 2.0,           // most sideways speed (m/s) the route asks of you: the slope shrinks as speed grows
+    pathEdge: 0.2,             // the route swings out to within this distance of the lane edges
     pathMinHalf: 0.14,         // half-width (m) of the guaranteed open path through the clutter
+    openMaxLow: 4.0, openMaxHigh: 1.5,   // no puck-wide strip of the lane may stay clear of objects longer than this (m), at density 1 / 10
+    guardGap: 0.4,                       // objects that close an open strip may sit this fraction of the normal gap from their neighbours
+    stripW: 0.35, stripStep: 0.1,        // how wide a strip counts as a "lane", and how finely the lane is checked
+    pathExtra: 0.05,           // extra clear room beside the route (m); keeps it narrow so there is no wide open lane
     startDensity: 4, startLevel: 2
   },
   dogAttack: {
@@ -84,16 +91,18 @@ const CONFIG = {
     halfWidth: 0.9144,         // metres from the centre line to each side (3 ft left, 3 ft right)
     depth: 0.9144,             // metres from the near edge to the far edge (3 ft)
     scaleMin: 0.5, scaleMax: 2.0,   // PLAYSPACE buttons: 50% to 200%, in steps of 10%
-    dogScale: 0.5,             // 1.0 = a 0.6 m long dog; 0.5 makes a dog about as long as an adult sneaker (0.3 m)
+    sizes: { dog: 0.5, shark: 0.4, trex: 0.33 },   // how big each animal looks; all come out about as long as an adult sneaker (0.3 m)
+    densMin: 1.2, densMax: 8.0,    // DENSITY 1 to 10: animals per square metre (about 2 to 13 in the 3 ft x 6 ft area)
+    shiftMax: 1.5, shiftStep: 0.1, // SHIFT buttons: how far the area may slide left or right, and the step (m)
     sepDist: 0.34,             // dogs steer away from each other when closer than this (m)
     turnRate: 4.0,             // radians per second a dog can turn
     baseSpeed: 0.2, speedStep: 0.09,   // walking speed (m/s) = baseSpeed + speedStep * level
     startLevel: 3,
-    perDifficulty: {           // dogs: how many. turnMin/turnMax: seconds between random direction changes.
-      easy:   { dogs: 4,  turnMin: 1.2, turnMax: 3.0, bigTurn: 0.35, pause: 0.25 },     // bigTurn: chance of a sharp turn. pause: chance of a stop-and-sniff after a turn.
-      medium: { dogs: 6,  turnMin: 1.0, turnMax: 2.5, bigTurn: 0.45, pause: 0.18 },
-      hard:   { dogs: 8,  turnMin: 0.7, turnMax: 2.0, bigTurn: 0.55, pause: 0.10 },
-      pro:    { dogs: 11, turnMin: 0.5, turnMax: 1.6, bigTurn: 0.65, pause: 0.05 }
+    perDifficulty: {           // how the animals behave (how many there are comes from DENSITY). turnMin/turnMax: seconds between random direction changes.
+      easy:   { turnMin: 1.2, turnMax: 3.0, bigTurn: 0.35, pause: 0.25 },     // bigTurn: chance of a sharp turn. pause: chance of a stop-and-sniff after a turn.
+      medium: { turnMin: 1.0, turnMax: 2.5, bigTurn: 0.45, pause: 0.18 },
+      hard:   { turnMin: 0.7, turnMax: 2.0, bigTurn: 0.55, pause: 0.10 },
+      pro:    { turnMin: 0.5, turnMax: 1.6, bigTurn: 0.65, pause: 0.05 }
     }
   },
   lava: {
@@ -104,6 +113,7 @@ const CONFIG = {
     puckLine: true,            // thin line across the lane where your puck is assumed to be (see keepAway.puckOffset)
     pathFill: 0.10,            // how solid the path is (0 = clear, 1 = solid slate); its bright edges always show
     scaleMin: 0.5, scaleMax: 1.5,   // PLAYSPACE buttons: how wide and long the lava is (50% to 150%). The path itself narrows a little below 100% but never widens
+    shiftMax: 1.5, shiftStep: 0.1,   // SHIFT buttons: how far the lava may slide left or right, and the step (m)
     edgeMargin: 0.05,          // the path always stays at least this far inside the lava (m)
     startLevel: 2,
     perDifficulty: {
@@ -192,6 +202,10 @@ const state = {
   levelDA: CONFIG.dogAttack.startLevel,   // Dog Attack speed level
   scaleDA: 1,                  // Dog Attack playspace scale (1 = 3 ft each way)
   scaleLV: 1,                  // The Floor Is Lava playspace scale
+  shiftDA: 0,                  // Dog Attack: how far the play area is slid sideways (m, negative = left)
+  shiftLV: 0,                  // The Floor Is Lava: same
+  densityDA: 4,                // Dog Attack: how many animals, 1 to 10
+  animal: 'dog',               // Dog Attack: dog | shark | trex
   hits: 0,                     // Heads Up! cannonballs that hit you
   dodged: 0,                   // Heads Up! cannonballs you ducked
   eyeHeight: 1.6,              // standing head height, measured on (re)center
@@ -260,6 +274,11 @@ const SAVE_KEY = 'stickMR.v2';
     const sc = (v, lim) => Math.round(clamp(v, lim.scaleMin, lim.scaleMax) * 10) / 10;
     if (Number.isFinite(s.scaleDA)) state.scaleDA = sc(s.scaleDA, CONFIG.dogAttack);
     if (Number.isFinite(s.scaleLV)) state.scaleLV = sc(s.scaleLV, CONFIG.lava);
+    if (Number.isInteger(s.densityDA)) state.densityDA = clamp(s.densityDA, 1, 10);
+    if (['dog', 'shark', 'trex'].includes(s.animal)) state.animal = s.animal;
+    const sh = (v, lim) => Math.round(clamp(v, -lim.shiftMax, lim.shiftMax) * 10) / 10;
+    if (Number.isFinite(s.shiftDA)) state.shiftDA = sh(s.shiftDA, CONFIG.dogAttack);
+    if (Number.isFinite(s.shiftLV)) state.shiftLV = sh(s.shiftLV, CONFIG.lava);
     if (GAMES.some(g => g.id === s.game)) state.game = s.game;
     if (s.panel && [s.panel.x, s.panel.y, s.panel.z].every(Number.isFinite)) state.panelPose = { x: s.panel.x, y: s.panel.y, z: s.panel.z };
   } catch (e) {}
@@ -270,7 +289,8 @@ function saveSettings() {
     { lanes: state.lanes, difficulty: state.difficulty, level: state.level,
       levelKA: state.levelKA, levelIN: state.levelIN, density: state.density,
       levelHU: state.levelHU, shots: state.shots, levelLV: state.levelLV,
-      levelDA: state.levelDA, scaleDA: state.scaleDA, scaleLV: state.scaleLV, game: state.game, panel: state.panelPose })); } catch (e) {}
+      levelDA: state.levelDA, scaleDA: state.scaleDA, scaleLV: state.scaleLV,
+      shiftDA: state.shiftDA, shiftLV: state.shiftLV, densityDA: state.densityDA, animal: state.animal, game: state.game, panel: state.panelPose })); } catch (e) {}
 }
 
 /* ============================== THREE SETUP ============================== */
@@ -1061,7 +1081,8 @@ function updateTreadmill(dt) {
    Objects are scattered at random with a minimum clear gap between neighbours; the gap shrinks and the
    count grows with the density level. A hidden, gently wandering open path is always kept clear, so even
    at density 10 there is always a way through, but it needs toe drags and tight hands to follow it. */
-const IN = { items: [], path: [], nextChunk: 0, travel: 0 };
+const IN = { items: [], path: [], nextChunk: 0, travel: 0, pathTarget: null, cover: {} };
+const IN_STRIPS = []; for (let c = -0.7; c < 0.71; c += 0.1) IN_STRIPS.push(Math.round(c * 10) / 10);
 const lerp = (a, b, t) => a + (b - a) * t;
 
 function insanityParams() {
@@ -1069,15 +1090,24 @@ function insanityParams() {
   return { target: lerp(IC.targetMin, IC.targetMax, t), gap: lerp(IC.gapMax, IC.gapMin, t) };
 }
 function resetInsanity() {
-  IN.items = []; IN.travel = 0; IN.nextChunk = 0;
-  IN.path = [{ s: 0, x: (Math.random() * 2 - 1) * 0.4 }];
+  IN.items = []; IN.travel = 0; IN.nextChunk = 0; IN.cover = {};
+  IN.path = [{ s: 0, x: (Math.random() * 2 - 1) * 0.4 }]; IN.pathTarget = null;
 }
 function extendPath(sEnd) {
-  const half = IC.laneWidth / 2 - 0.25;
+  /* The open route zig-zags: it picks a new target near one side of the lane, heads there, then swings to the other
+     side (usually), so it keeps crossing the middle instead of settling there. How fast it can swing sideways
+     is limited by pathLatMax so it stays doable at higher speeds. */
+  const half = IC.laneWidth / 2 - IC.pathEdge;
+  const slope = clamp(IC.pathLatMax / speedFor(state.levelIN), IC.pathSlopeMin, IC.pathSlope);
   while (IN.path[IN.path.length - 1].s < sEnd) {
     const last = IN.path[IN.path.length - 1];
-    const step = (Math.random() * 2 - 1) * IC.pathSlope * IC.chunkLength;
-    IN.path.push({ s: last.s + IC.chunkLength, x: clamp(last.x + step, -half, half) });
+    if (IN.pathTarget === null || Math.abs(last.x - IN.pathTarget) < 0.04) {
+      const away = -Math.sign(last.x || (Math.random() - 0.5));
+      const side = Math.random() < 0.8 ? away : -away;
+      IN.pathTarget = clamp(side * (0.25 + Math.random() * (half - 0.25)), -half, half);
+    }
+    const max = slope * IC.chunkLength;
+    IN.path.push({ s: last.s + IC.chunkLength, x: last.x + clamp(IN.pathTarget - last.x, -max, max) });
   }
   while (IN.path.length > 8 && IN.path[1].s < IN.travel - 6) IN.path.shift();
 }
@@ -1126,34 +1156,47 @@ function capsClearOfPath(caps, half) {                        // sample along ev
   }
   return true;
 }
+/* Try to drop one random object into the chunk starting at g. forceX (optional) aims it at a particular strip of the lane. */
+function tryPlaceInsanity(g, gap, half, forceX) {
+  const d = pickIns(), th = d.ang();
+  const rel = capsAt(d, 0, 0, th);                              // how far it reaches sideways, so it stays inside the lane
+  let ext = 0; rel.forEach(k => { ext = Math.max(ext, Math.abs(k.x0) + k.r, Math.abs(k.x1) + k.r); });
+  const lim = IC.laneWidth / 2 + 0.12 - ext;
+  if (lim < 0) return false;
+  const x = forceX !== undefined ? clamp(forceX + (Math.random() - 0.5) * 0.3, -lim, lim)
+    : d.xPick ? clamp(d.xPick(), -lim, lim) : (Math.random() * 2 - 1) * lim;
+  const s = g + Math.random() * IC.chunkLength;
+  const caps = capsAt(d, x, s, th);
+  if (!capsClearOfPath(caps, half)) return false;               // keep the open route clear
+  let rb = 0; rel.forEach(k => { rb = Math.max(rb, Math.hypot(k.x0, k.s0) + k.r, Math.hypot(k.x1, k.s1) + k.r); });
+  for (const o of IN.items) {                                   // keep a gap around every neighbour
+    const dx = o.x - x, ds = o.s - s, reach = o.rb + rb + gap;
+    if (dx * dx + ds * ds >= reach * reach) continue;
+    for (const a of caps) for (const b of o.caps) if (capDist(a, b) < gap) return false;
+  }
+  IN.items.push({ x, s, rb, caps });
+  for (const k of caps) {                                       // remember how far along each strip of the lane is now covered
+    const n = Math.max(1, Math.ceil(Math.hypot(k.x1 - k.x0, k.s1 - k.s0) / 0.05));
+    for (let i = 0; i <= n; i++) {
+      const t = i / n, px = k.x0 + (k.x1 - k.x0) * t, ps = k.s0 + (k.s1 - k.s0) * t;
+      for (const c of IN_STRIPS) if (Math.abs(px - c) < IC.stripW / 2 + k.r && ps + k.r > (IN.cover[c] || 0)) IN.cover[c] = ps + k.r;
+    }
+  }
+  spawnTpl(d.tpl, x, -CONFIG.spawnDistance + (IN.travel - s)).rotation.y = th;
+  return true;
+}
 function generateInsanityChunk(g) {
   const { target, gap } = insanityParams();
   extendPath(g + IC.chunkLength * 3);
-  const half = Math.max(IC.pathMinHalf, gap / 2);
+  const half = Math.max(IC.pathMinHalf, Math.min(gap / 2, IC.pathMinHalf + IC.pathExtra));   // narrow corridor: no wide open lane
   const count = Math.round(target * IC.chunkLength * (0.7 + Math.random() * 0.6));
   let placed = 0, tries = 0;
-  while (placed < count && tries < 300) {
-    tries++;
-    const d = pickIns(), th = d.ang();
-    const rel = capsAt(d, 0, 0, th);                            // how far it reaches sideways, so it stays inside the lane
-    let ext = 0; rel.forEach(k => { ext = Math.max(ext, Math.abs(k.x0) + k.r, Math.abs(k.x1) + k.r); });
-    const lim = IC.laneWidth / 2 + 0.12 - ext;
-    if (lim < 0) continue;
-    const x = d.xPick ? clamp(d.xPick(), -lim, lim) : (Math.random() * 2 - 1) * lim;
-    const s = g + Math.random() * IC.chunkLength;
-    const caps = capsAt(d, x, s, th);
-    if (!capsClearOfPath(caps, half)) continue;
-    let rb = 0; rel.forEach(k => { rb = Math.max(rb, Math.hypot(k.x0, k.s0) + k.r, Math.hypot(k.x1, k.s1) + k.r); });
-    let ok = true;
-    for (const o of IN.items) {                                  // keep a gap around every neighbour
-      const dx = o.x - x, ds = o.s - s, reach = o.rb + rb + gap;
-      if (dx * dx + ds * ds >= reach * reach) continue;
-      for (const a of caps) { for (const b of o.caps) if (capDist(a, b) < gap) { ok = false; break; } if (!ok) break; }
-      if (!ok) break;
-    }
-    if (!ok) continue;
-    IN.items.push({ x, s, rb, caps }); placed++;
-    spawnTpl(d.tpl, x, -CONFIG.spawnDistance + (IN.travel - s)).rotation.y = th;
+  while (placed < count && tries < 300) { tries++; if (tryPlaceInsanity(g, gap, half)) placed++; }
+  // no strip of the lane may stay clear for long: if one has, put something across it
+  const openMax = lerp(IC.openMaxLow, IC.openMaxHigh, (state.density - 1) / 9);
+  for (const c of IN_STRIPS) {
+    if (g - (IN.cover[c] || 0) <= openMax) continue;
+    for (let t = 0; t < 80; t++) if (tryPlaceInsanity(g, Math.max(IC.gapMin, gap * IC.guardGap), half, c)) break;   // tighter gap: this is what breaks up open lanes
   }
 }
 function updateInsanity(dt) {
@@ -1776,6 +1819,7 @@ function updateLava(dt) {
   lavaMat.opacity = 0.68 + 0.07 * Math.sin(LV.t * 2.3);
   writeRibbon();
 }
+function applyLavaShift() { lavaGroup.position.x = state.shiftLV; }
 function applyLavaScale() {                                 // PLAYSPACE changed: refit the lava and lay the path out again
   puckLine.scale.x = state.scaleLV;
   resetLava();
@@ -1784,7 +1828,7 @@ function idleLava(dt) { LV.t += dt; lavaMat.opacity = 0.68 + 0.07 * Math.sin(LV.
 
 function resetLava() {
   const on = state.game === 'lava';
-  lavaGroup.visible = on;
+  lavaGroup.visible = on; lavaGroup.position.x = state.shiftLV;
   LV.pts.length = 0; LV.u = 0; LV.genX = 0; LV.genS = 0; LV.target = 0; LV.nextTurn = LC.startStraight;
   lavaTex.offset.set(0, 0);
   if (!on) return;
@@ -1799,24 +1843,26 @@ function resetLava() {
 }
 resetLava();
 
-/* ============================== DOG ATTACK ============================== */
-/* A static level: nothing slides toward you. Little French bulldogs (about the size of an adult sneaker) wander
-   around inside a rectangle on the floor in front of you, turning at random and sometimes stopping for a sniff,
-   and you stickhandle around them. The rectangle starts DA.startDist in front of you and reaches DA.halfWidth to
-   each side and DA.depth ahead of that (3 ft each by default). The PLAYSPACE buttons scale the whole rectangle,
-   starting distance included, about your feet. The dogs stay the same size. They never overlap each other. */
+/* ============================== DOG ATTACK (also sharks and T-rexes) ============================== */
+/* A static level: nothing slides toward you. Little animals (dogs, sharks or T-rexes, each about the size of an
+   adult sneaker) wander around inside a rectangle on the floor in front of you, turning at random and sometimes
+   stopping, and you stickhandle around them. The rectangle starts DA.startDist in front of you and reaches
+   DA.halfWidth to each side and DA.depth ahead of that (3 ft each by default). PLAYSPACE scales the whole
+   rectangle (starting distance included) about your feet, SHIFT slides it left or right, DENSITY sets how many
+   animals there are per square metre. The animals stay the same size and never overlap. */
 const DA = CONFIG.dogAttack;
 const DAS = { dogs: [] };
 const daSpeed = lvl => DA.baseSpeed + DA.speedStep * lvl;
 const daParams = () => DA.perDifficulty[state.difficulty] || DA.perDifficulty.easy;
 const daArea = () => {
-  const k = state.scaleDA;
-  return { x0: -DA.halfWidth * k, x1: DA.halfWidth * k, zNear: -DA.startDist * k, zFar: -(DA.startDist + DA.depth) * k };
+  const k = state.scaleDA, c = state.shiftDA;
+  return { x0: c - DA.halfWidth * k, x1: c + DA.halfWidth * k, zNear: -DA.startDist * k, zFar: -(DA.startDist + DA.depth) * k };
 };
 const wrapA = a => Math.atan2(Math.sin(a), Math.cos(a));
-// a small playspace can't hold as many dogs: roughly one dog per sepDist x sepDist of floor
-const daDogCount = () => Math.max(1, Math.min(daParams().dogs,
-  Math.floor(2 * DA.halfWidth * DA.depth * state.scaleDA * state.scaleDA / (DA.sepDist * DA.sepDist))));
+// how many animals: DENSITY gives animals per square metre; a small playspace simply holds fewer (never more than fit)
+const daAreaM2 = () => 2 * DA.halfWidth * DA.depth * state.scaleDA * state.scaleDA;
+const daPerM2 = () => lerp(DA.densMin, DA.densMax, (state.densityDA - 1) / 9);
+const daDogCount = () => Math.max(1, Math.min(Math.floor(daAreaM2() / (DA.sepDist * DA.sepDist)), Math.round(daPerM2() * daAreaM2())));
 
 const daGroup = new THREE.Group(); daGroup.visible = false; world.add(daGroup);
 { // floor marking, built at 100% and scaled with the group
@@ -1830,20 +1876,141 @@ const daGroup = new THREE.Group(); daGroup.visible = false; world.add(daGroup);
     m.rotation.x = -Math.PI / 2; m.position.set(x, 0.003, z); daGroup.add(m);
   });
 }
-const daFurs = [[0xc99d68, 0xf0e6d6], [0x6b4a32, 0xe8dccb], [0xe9dcc3, 0xffffff], [0x2c2c30, 0xdedede], [0x7f8895, 0xe6e6e6], [0xa8774a, 0xf5efe3]]
+
+/* ---------- the animals: each faces +Z with its feet on Y = 0 ---------- */
+const am = {
+  belly: std(0xf0f4f7, { roughness: 0.6 }), mouth: std(0x3a0f14, { roughness: 0.6 }), tooth: std(0xffffff, { roughness: 0.3 }),
+  black: std(0x0b0b0c, { roughness: 0.2 }), eyeY: std(0xf2d13a, { roughness: 0.3 }), claw: std(0xe9e2cc, { roughness: 0.5 })
+};
+const dogFurs = [[0xc99d68, 0xf0e6d6], [0x6b4a32, 0xe8dccb], [0xe9dcc3, 0xffffff], [0x2c2c30, 0xdedede], [0x7f8895, 0xe6e6e6], [0xa8774a, 0xf5efe3]]
   .map(([a, b]) => ({ fur: std(a, { roughness: 0.9 }), furLight: std(b, { roughness: 0.9 }) }));
+const sharkSkins = [0x7b8ea3, 0x5d7288, 0x8d9aa8, 0x4d6275, 0x6f8a9e].map(c => std(c, { roughness: 0.5 }));
+const trexSkins = [[0x4f9d4f, 0xcfe3a8], [0x6aa84f, 0xe6efc4], [0x3c7a5a, 0xbcd9c1], [0x8a9a3a, 0xe1e3a0], [0xb5651d, 0xf0d9b5], [0x2f8f9d, 0xcfeaee]]
+  .map(([a, b]) => ({ body: std(a, { roughness: 0.75 }), belly: std(b, { roughness: 0.75 }) }));
+const cone = (r, h, m, x, y, z, seg = 8) => mesh(new THREE.ConeGeometry(r, h, seg), m, x, y, z);
+
+function makeShark(i) {                                      // about 0.77 m long before scaling
+  const g = sharkSkins[i % sharkSkins.length];
+  const root = new THREE.Group(), inner = new THREE.Group(); root.add(inner);
+  inner.add(ell(g, 0.085, 0.085, 0.2, 0, 0.1, 0));                       // body
+  inner.add(ell(g, 0.06, 0.06, 0.18, 0, 0.1, -0.14));
+  inner.add(ell(am.belly, 0.07, 0.05, 0.2, 0, 0.065, 0.03));             // white belly
+  const head = new THREE.Group(); head.position.set(0, 0.1, 0.17); inner.add(head);
+  head.add(ell(g, 0.07, 0.065, 0.12, 0, 0, 0.06));                       // snout
+  head.add(box(0.07, 0.01, 0.1, am.mouth, 0, -0.04, 0.07));              // mouth
+  for (let t = -3; t <= 3; t++) {                                        // upper teeth
+    const th = cone(0.009, 0.03, am.tooth, t * 0.0115, -0.05, 0.12, 6); th.rotation.x = Math.PI; head.add(th);
+  }
+  const jaw = new THREE.Group(); jaw.position.set(0, -0.045, 0.02); head.add(jaw);          // lower jaw opens and shuts
+  jaw.add(ell(am.belly, 0.05, 0.02, 0.09, 0, -0.01, 0.07));
+  for (let t = -2; t <= 2; t++) jaw.add(cone(0.008, 0.026, am.tooth, t * 0.012, 0.01, 0.13, 6));
+  [-1, 1].forEach(s => {
+    head.add(ell(am.black, 0.013, 0.013, 0.013, s * 0.058, 0.032, 0.05));    // eyes
+    head.add(ell(am.tooth, 0.005, 0.005, 0.005, s * 0.061, 0.037, 0.06));
+  });
+  const fin = cone(0.05, 0.14, g, 0, 0.2, -0.01, 10); fin.scale.z = 0.35; fin.rotation.x = -0.3; inner.add(fin);   // dorsal fin
+  [-1, 1].forEach(s => {                                                 // side fins
+    const f = cone(0.035, 0.11, g, s * 0.1, 0.065, 0.06, 8); f.scale.z = 0.3; f.rotation.z = -s * 1.2; inner.add(f);
+  });
+  const tail = new THREE.Group(); tail.position.set(0, 0.1, -0.25); inner.add(tail);
+  const up = cone(0.035, 0.17, g, 0, 0.06, -0.05, 8); up.scale.z = 0.3; up.rotation.x = -0.6; tail.add(up);
+  const lo = cone(0.03, 0.11, g, 0, -0.04, -0.04, 8); lo.scale.z = 0.3; lo.rotation.x = Math.PI + 0.8; tail.add(lo);
+  const sh = new THREE.Mesh(shadowGeo, mat.shadow);
+  sh.rotation.x = -Math.PI / 2; sh.position.y = 0.004; sh.scale.set(0.12, 0.34, 1); root.add(sh);
+  return { root, inner, head, jaw, tail, legs: [], ears: [] };
+}
+function makeTrex(i) {                                       // about 0.95 m long before scaling
+  const P = trexSkins[i % trexSkins.length];
+  const root = new THREE.Group(), inner = new THREE.Group(); root.add(inner);
+  const legs = [];
+  [-1, 1].forEach(s => {                                                 // two strong legs, pivoting at the hip
+    const lg = new THREE.Group(); lg.position.set(s * 0.085, 0.2, -0.02);
+    lg.add(ell(P.body, 0.055, 0.09, 0.07, 0, -0.03, 0));                 // thigh
+    lg.add(cyl(0.022, 0.03, 0.12, P.body, 0, -0.12, 0.015, 10));         // shin
+    lg.add(ell(P.body, 0.04, 0.016, 0.075, 0, -0.185, 0.045));           // foot
+    [-1, 0, 1].forEach(t => lg.add(cone(0.008, 0.03, am.claw, t * 0.022, -0.185, 0.115, 6)));
+    inner.add(lg); legs.push(lg);
+  });
+  inner.add(ell(P.body, 0.105, 0.115, 0.21, 0, 0.27, -0.02));            // body
+  inner.add(ell(P.belly, 0.085, 0.085, 0.17, 0, 0.235, 0.0));            // pale belly
+  inner.add(ell(P.body, 0.065, 0.07, 0.1, 0, 0.34, 0.16));               // neck
+  const head = new THREE.Group(); head.position.set(0, 0.37, 0.25); inner.add(head);
+  head.add(ell(P.body, 0.075, 0.068, 0.12, 0, 0, 0.04));                 // skull
+  head.add(ell(P.body, 0.058, 0.04, 0.09, 0, -0.01, 0.12));              // snout
+  [-1, 1].forEach(s => {
+    head.add(ell(am.eyeY, 0.015, 0.015, 0.015, s * 0.062, 0.03, 0.06));  // eyes
+    head.add(ell(am.black, 0.008, 0.012, 0.008, s * 0.07, 0.03, 0.065));
+    head.add(ell(P.body, 0.02, 0.01, 0.03, s * 0.058, 0.055, 0.065));    // brow ridge
+    head.add(ell(am.black, 0.008, 0.008, 0.008, s * 0.02, 0.012, 0.205)); // nostrils
+  });
+  for (let t = 0; t < 5; t++) [-1, 1].forEach(s => {                     // upper teeth
+    const th = cone(0.008, 0.028, am.tooth, s * 0.05, -0.04, 0.03 + t * 0.03, 6); th.rotation.x = Math.PI; head.add(th);
+  });
+  const jaw = new THREE.Group(); jaw.position.set(0, -0.045, 0.0); head.add(jaw);
+  jaw.add(ell(P.belly, 0.05, 0.02, 0.1, 0, -0.005, 0.1));
+  for (let t = 0; t < 4; t++) [-1, 1].forEach(s => jaw.add(cone(0.007, 0.022, am.tooth, s * 0.036, 0.018, 0.06 + t * 0.03, 6)));
+  const arms = [];
+  [-1, 1].forEach(s => {                                                 // tiny arms
+    const a = new THREE.Group(); a.position.set(s * 0.09, 0.28, 0.13);
+    a.add(cyl(0.011, 0.011, 0.075, P.body, 0, -0.035, 0.0, 8));
+    [-1, 1].forEach(t => a.add(cone(0.005, 0.025, am.claw, t * 0.01, -0.085, 0.0, 5)));
+    a.rotation.x = -0.9; a.rotation.z = s * 0.25; inner.add(a); arms.push(a);
+  });
+  const tail = new THREE.Group(); tail.position.set(0, 0.27, -0.2); inner.add(tail);
+  tail.add(ell(P.body, 0.075, 0.07, 0.14, 0, 0, -0.1));
+  const tail2 = new THREE.Group(); tail2.position.set(0, 0, -0.22); tail.add(tail2);
+  tail2.add(ell(P.body, 0.045, 0.04, 0.13, 0, 0, -0.07));
+  tail.userData.t2 = tail2;
+  const sh = new THREE.Mesh(shadowGeo, mat.shadow);
+  sh.rotation.x = -Math.PI / 2; sh.position.y = 0.004; sh.scale.set(0.16, 0.4, 1); sh.position.z = -0.1; root.add(sh);
+  return { root, inner, head, jaw, tail, legs, arms, ears: [] };
+}
+const poseDog = (d, mv) => {
+  const sw = Math.sin(d.gait) * 0.7 * mv;
+  d.legs[0].rotation.x = sw; d.legs[3].rotation.x = sw; d.legs[1].rotation.x = -sw; d.legs[2].rotation.x = -sw;
+  d.inner.position.y = Math.abs(Math.sin(d.gait)) * 0.014 * mv;
+  d.inner.rotation.z = Math.sin(d.gait) * 0.05 * mv;
+  d.head.rotation.x = d.pause > 0 ? 0.4 + 0.1 * Math.sin(d.phase * 9) : 0.05 * Math.sin(d.gait * 2) * mv;
+  d.head.rotation.z = Math.sin(d.phase * 0.9) * 0.07;
+  d.tail.rotation.y = Math.sin(d.phase * (9 + 8 * mv)) * 0.6;
+  d.ears.forEach((e, i) => { e.rotation.x = Math.sin(d.phase * 3 + i) * 0.08; });
+};
+const poseShark = (d, mv) => {                               // swims along the floor: body wiggles, tail sweeps, jaws snap when it stops
+  d.inner.rotation.y = Math.sin(d.gait) * 0.2 * mv;
+  d.inner.position.y = 0.012 + Math.sin(d.phase * 2) * 0.008;
+  d.tail.rotation.y = Math.sin(d.gait - 1.0) * (0.25 + 0.5 * mv);
+  d.head.rotation.y = -Math.sin(d.gait) * 0.12 * mv + Math.sin(d.phase * 0.7) * 0.05;
+  d.jaw.rotation.x = d.pause > 0 ? 0.35 + 0.3 * Math.sin(d.phase * 10) : 0.06 + 0.05 * Math.sin(d.phase * 1.6);
+};
+const poseTrex = (d, mv) => {                                // stomps along, tail swinging, jaws working
+  const sw = Math.sin(d.gait) * 0.6 * mv;
+  d.legs[0].rotation.x = sw; d.legs[1].rotation.x = -sw;
+  d.inner.position.y = Math.abs(Math.sin(d.gait)) * 0.016 * mv;
+  d.inner.rotation.z = Math.sin(d.gait) * 0.07 * mv;
+  d.tail.rotation.y = Math.sin(d.gait * 0.5) * 0.4 * (0.4 + mv);
+  d.tail.userData.t2.rotation.y = Math.sin(d.gait * 0.5 - 0.8) * 0.5 * (0.4 + mv);
+  d.head.rotation.y = Math.sin(d.phase * 0.8) * 0.2 * (1 - mv * 0.5);
+  d.jaw.rotation.x = d.pause > 0 ? 0.3 + 0.25 * Math.sin(d.phase * 8) : 0.08 + 0.06 * Math.sin(d.phase * 1.5);
+  d.arms.forEach((a, i) => { a.rotation.x = -0.9 + Math.sin(d.phase * 5 + i * 2) * 0.15; });
+};
+const ANIMALS = {
+  dog:   { name: 'DOG',    title: 'DOG ATTACK',    plural: 'dogs',    pose: poseDog,
+           make: i => { const p = dogFurs[i % dogFurs.length]; return makeDogModel({ cannon: false, fur: p.fur, furLight: p.furLight }); } },
+  shark: { name: 'SHARK',  title: 'SHARK ATTACK',  plural: 'sharks',  pose: poseShark, make: makeShark },
+  trex:  { name: 'T-REX',  title: 'T-REX ATTACK',  plural: 't-rexes', pose: poseTrex,  make: makeTrex }
+};
+const ANIMAL_IDS = ['dog', 'shark', 'trex'];
 
 function clearDogAttack() { DAS.dogs.forEach(d => world.remove(d.root)); DAS.dogs.length = 0; }
 function resetDogAttack() {
   clearDogAttack();
   const on = state.game === 'dogattack';
-  daGroup.visible = on; daGroup.scale.setScalar(state.scaleDA);
+  daGroup.visible = on; daGroup.scale.setScalar(state.scaleDA); daGroup.position.x = state.shiftDA;
   if (!on) return;
-  const A = daArea(), P = daParams();
+  const A = daArea(), P = daParams(), kind = ANIMALS[state.animal];
   for (let i = 0; i < daDogCount(); i++) {
-    const pal = daFurs[i % daFurs.length];
-    const m = makeDogModel({ cannon: false, fur: pal.fur, furLight: pal.furLight });
-    m.root.scale.setScalar(DA.dogScale); world.add(m.root);
+    const m = kind.make(i);
+    m.root.scale.setScalar(DA.sizes[state.animal]); world.add(m.root);
     let x = 0, z = 0;
     for (let t = 0; t < 40; t++) {                          // spread them out
       x = lerp(A.x0 + 0.1, A.x1 - 0.1, Math.random()); z = lerp(A.zNear - 0.1, A.zFar + 0.1, Math.random());
@@ -1854,15 +2021,19 @@ function resetDogAttack() {
     m.root.position.set(x, 0, z); m.root.rotation.y = h;
   }
 }
-function applyDogScale(old) {                               // the dogs keep their place relative to the area
-  const r = state.scaleDA / old;
-  if (daDogCount() !== DAS.dogs.length) { resetDogAttack(); return; }     // different number of dogs fits: start them again
+function applyDogScale(old) {                               // the animals keep their place relative to the area
+  const r = state.scaleDA / old, c = state.shiftDA;
+  if (daDogCount() !== DAS.dogs.length) { resetDogAttack(); return; }     // a different number fits: start them again
   daGroup.scale.setScalar(state.scaleDA);
-  DAS.dogs.forEach(d => { d.x *= r; d.z *= r; });
+  DAS.dogs.forEach(d => { d.x = c + (d.x - c) * r; d.z *= r; });
+}
+function applyDogShift(delta) {                             // slide the whole area, and everybody in it, sideways
+  daGroup.position.x = state.shiftDA;
+  DAS.dogs.forEach(d => { d.x += delta; });
 }
 function updateDogAttack(dt, active) {
   const A = daArea(), P = daParams(), spd = daSpeed(state.levelDA), ds = DAS.dogs;
-  const margin = 0.22, minSep = DA.sepDist * 0.92;
+  const margin = 0.22, minSep = DA.sepDist * 0.92, pose = ANIMALS[state.animal].pose;
   ds.forEach(d => {
     d.phase += dt;
     let want = d.h, diff = 0;
@@ -1873,7 +2044,7 @@ function updateDogAttack(dt, active) {
         d.target = d.h + (Math.random() * 2 - 1) * Math.PI * (Math.random() < P.bigTurn ? 1 : 0.4);
         d.timer = P.turnMin + Math.random() * (P.turnMax - P.turnMin);
         d.speedK = 0.7 + Math.random() * 0.6;
-        if (Math.random() < P.pause) d.pause = 0.5 + Math.random() * 1.0;     // stop for a sniff
+        if (Math.random() < P.pause) d.pause = 0.5 + Math.random() * 1.0;     // stop for a moment
       }
       let vx = Math.sin(d.target), vz = Math.cos(d.target);
       if (d.x < A.x0 + margin) vx += (A.x0 + margin - d.x) / margin * 2.5;     // turn away from the edges
@@ -1910,24 +2081,17 @@ function updateDogAttack(dt, active) {
     ds.forEach(d => { d.x = clamp(d.x, A.x0 + 0.04, A.x1 - 0.04); d.z = clamp(d.z, A.zFar + 0.04, A.zNear - 0.04); });
   }
   ds.forEach(d => {                                        // pose the model
-    d.x = clamp(d.x, A.x0 + 0.04, A.x1 - 0.04); d.z = clamp(d.z, A.zFar + 0.04, A.zNear - 0.04);   // separation must not push a dog out
     const mv = clamp(d.v / 0.45, 0, 1);
     d.gait += dt * (7 + d.v * 16);
     d.root.position.set(d.x, 0, d.z); d.root.rotation.y = d.h;
-    const sw = Math.sin(d.gait) * 0.7 * mv;
-    d.legs[0].rotation.x = sw; d.legs[3].rotation.x = sw; d.legs[1].rotation.x = -sw; d.legs[2].rotation.x = -sw;
-    d.inner.position.y = Math.abs(Math.sin(d.gait)) * 0.014 * mv;
-    d.inner.rotation.z = Math.sin(d.gait) * 0.05 * mv;
-    d.head.rotation.x = d.pause > 0 ? 0.4 + 0.1 * Math.sin(d.phase * 9) : 0.05 * Math.sin(d.gait * 2) * mv;
-    d.head.rotation.z = Math.sin(d.phase * 0.9) * 0.07;
-    d.tail.rotation.y = Math.sin(d.phase * (9 + 8 * mv)) * 0.6;
-    d.ears.forEach((e, i) => { e.rotation.x = Math.sin(d.phase * 3 + i) * 0.08; });
+    pose(d, mv);
   });
 }
 resetDogAttack();
 
 /* ============================== UI PANEL ============================== */
-const CW = 1024, CH = 704;                       // the layout is designed on this grid
+const CW = 1024, CH = 786;                       // the layout is designed on this grid (704 tall for most games; Dog Attack needs the extra rows)
+const panelH = () => (state.game === 'dogattack' ? 786 : 704);
 const UI_SCALE = CONFIG.panelScale;              // the panel is drawn this much bigger, but the text stays the same size in the world
 const canvas = document.createElement('canvas'); canvas.width = Math.round(CW * UI_SCALE); canvas.height = Math.round(CH * UI_SCALE);
 const ctx = canvas.getContext('2d');
@@ -1953,6 +2117,9 @@ const treadmillOnly = () => state.game === 'treadmill';
 const insanityOnly = () => state.game === 'insanity';
 const headsupOnly = () => state.game === 'headsup';
 const areaGame = () => state.game === 'lava' || state.game === 'dogattack';
+const dogOnly = () => state.game === 'dogattack';
+const diffY = () => (state.game === 'dogattack' ? 536 : 454);     // the difficulty row and the bottom row move down in Dog Attack
+const botY = () => (state.game === 'dogattack' ? 622 : 540);
 const hasDifficulty = () => state.game === 'treadmill' || state.game === 'keepaway' || state.game === 'lava';
 const buttons = [
   { id: 'gameprev', x: 40,  y: 62,  w: 120, h: 62, label: '◀' },
@@ -1964,17 +2131,22 @@ const buttons = [
       label: n + ' LANES', sel: () => state.lanes === n, show: treadmillOnly })),
   { id: 'densdown', x: 215, y: 372, w: 120, h: 66, label: '−', show: insanityOnly },
   { id: 'densup',   x: 864, y: 372, w: 120, h: 66, label: '+', show: insanityOnly },
-  { id: 'areadown', x: 215, y: 372, w: 120, h: 66, label: '−', show: areaGame },
-  { id: 'areaup',   x: 864, y: 372, w: 120, h: 66, label: '+', show: areaGame },
+  { id: 'areadown', x: 40,  y: 372, w: 80, h: 66, label: '−', show: areaGame },
+  { id: 'areaup',   x: 420, y: 372, w: 80, h: 66, label: '+', show: areaGame },
+  { id: 'shiftl',   x: 524, y: 372, w: 80, h: 66, label: '◀', show: areaGame },
+  { id: 'shiftr',   x: 904, y: 372, w: 80, h: 66, label: '▶', show: areaGame },
+  { id: 'dogdensdown', x: 40,  y: 454, w: 80, h: 66, label: '−', show: dogOnly },
+  { id: 'dogdensup',   x: 420, y: 454, w: 80, h: 66, label: '+', show: dogOnly },
+  { id: 'animprev',    x: 524, y: 454, w: 80, h: 66, label: '◀', show: dogOnly },
+  { id: 'animnext',    x: 904, y: 454, w: 80, h: 66, label: '▶', show: dogOnly },
   { id: 'shotsdown', x: 215, y: 372, w: 120, h: 66, label: '−', show: headsupOnly },
   { id: 'shotsup',   x: 864, y: 372, w: 120, h: 66, label: '+', show: headsupOnly },
-  ...CONFIG.difficulties.map((d, i) => ({ id: 'diff' + d, x: 215 + i * 194, y: 454, w: 184, h: 66,
-      label: () => state.game === 'keepaway' ? d.toUpperCase() + ' (' + KC.perDifficulty[d].count + ')'
-        : state.game === 'dogattack' ? d.toUpperCase() + ' (' + DA.perDifficulty[d].dogs + ')' : d.toUpperCase(),
+  ...CONFIG.difficulties.map((d, i) => ({ id: 'diff' + d, x: 215 + i * 194, get y() { return diffY(); }, w: 184, h: 66,
+      label: () => state.game === 'keepaway' ? d.toUpperCase() + ' (' + KC.perDifficulty[d].count + ')' : d.toUpperCase(),
       sel: () => state.difficulty === d, show: hasDifficulty })),
-  { id: 'reset',    x: 40,  y: 540, w: 300, h: 80,  label: 'RESET' },
-  { id: 'menuhome', x: 356, y: 540, w: 312, h: 80,  label: 'MENU HOME' },
-  { id: 'recenter', x: 684, y: 540, w: 300, h: 80,  label: 'RECENTER' }
+  { id: 'reset',    x: 40,  get y() { return botY(); }, w: 300, h: 80,  label: 'RESET' },
+  { id: 'menuhome', x: 356, get y() { return botY(); }, w: 312, h: 80,  label: 'MENU HOME' },
+  { id: 'recenter', x: 684, get y() { return botY(); }, w: 300, h: 80,  label: 'RECENTER' }
 ];
 
 function rr(x, y, w, h, r) {
@@ -1995,20 +2167,24 @@ let lastTimerText = '';
 function drawPanel() {
   ctx.setTransform(UI_SCALE, 0, 0, UI_SCALE, 0, 0);
   const ka = state.game === 'keepaway', ins = state.game === 'insanity', hu = state.game === 'headsup', lv = state.game === 'lava', da = state.game === 'dogattack';
-  const areaRow = (sub) => {                                   // PLAYSPACE row between the − and + buttons
-    ctx.textAlign = 'left'; ctx.fillStyle = '#9fb3d1'; ctx.font = '700 25px system-ui, sans-serif';
-    ctx.fillText('AREA', 40, 405);
-    ctx.fillStyle = '#1a2740'; rr(347, 372, 505, 66, 20); ctx.fill();
-    ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.font = '700 28px system-ui, sans-serif';
-    ctx.fillText('PLAYSPACE  ' + Math.round((da ? state.scaleDA : state.scaleLV) * 100) + '%', 347 + 505 / 2, 393);
-    ctx.fillStyle = '#9fb3d1'; ctx.font = '600 19px system-ui, sans-serif';
-    ctx.fillText(sub, 347 + 505 / 2, 423);
+  const grp = (gx, y, title, sub) => {                         // the box between a pair of − / + (or ◀ ▶) buttons
+    ctx.fillStyle = '#1a2740'; rr(gx + 88, y, 284, 66, 20); ctx.fill();
+    ctx.textAlign = 'center'; ctx.fillStyle = '#ffffff'; ctx.font = '700 26px system-ui, sans-serif';
+    ctx.fillText(title, gx + 230, y + 25);
+    ctx.fillStyle = '#9fb3d1'; ctx.font = '600 18px system-ui, sans-serif';
+    ctx.fillText(sub, gx + 230, y + 49);
+  };
+  const areaRows = (sub) => {                                  // PLAYSPACE and SHIFT, side by side
+    const v = lv ? state.shiftLV : state.shiftDA;
+    grp(40, 372, 'PLAYSPACE  ' + Math.round((da ? state.scaleDA : state.scaleLV) * 100) + '%', sub);
+    grp(524, 372, 'SHIFT  ' + (Math.abs(v) < 0.005 ? 'CENTRED' : (Math.abs(v) / 0.3048).toFixed(1) + ' ft ' + (v < 0 ? 'LEFT' : 'RIGHT')), 'slide the area sideways');
   };
   ctx.clearRect(0, 0, CW, CH);
   ctx.fillStyle = 'rgba(10,18,34,0.9)';
-  rr(0, 0, CW, CH, 36); ctx.fill();
+  const PH = panelH();
+  rr(0, 0, CW, PH, 36); ctx.fill();
   ctx.strokeStyle = state.dragging ? 'rgba(255,209,102,0.95)' : 'rgba(76,201,240,0.8)'; ctx.lineWidth = state.dragging ? 8 : 5;
-  rr(3, 3, CW - 6, CH - 6, 34); ctx.stroke();
+  rr(3, 3, CW - 6, PH - 6, 34); ctx.stroke();
 
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillStyle = '#9fb3d1'; ctx.font = '600 28px system-ui, sans-serif';
@@ -2024,7 +2200,7 @@ function drawPanel() {
   ctx.fillStyle = '#1a2740'; rr(172, 62, 680, 62, 20); ctx.fill();
   ctx.strokeStyle = '#4cc9f0'; ctx.lineWidth = 3; rr(172, 62, 680, 62, 20); ctx.stroke();
   ctx.fillStyle = '#ffffff'; ctx.font = '800 32px system-ui, sans-serif';
-  ctx.fillText(GAMES[gi].name, CW / 2, 94);
+  ctx.fillText(da ? ANIMALS[state.animal].title : GAMES[gi].name, CW / 2, 94);
   ctx.fillStyle = '#5f7391'; ctx.font = '600 18px system-ui, sans-serif';
   ctx.textAlign = 'left'; ctx.fillText('GAME ' + (gi + 1) + '/' + GAMES.length, 188, 76); ctx.textAlign = 'center';
 
@@ -2036,12 +2212,12 @@ function drawPanel() {
     : ins ? 'Density ' + state.density + '  ·  Passed ' + state.passed
     : hu ? 'Dodged ' + state.dodged + '  ·  Hit ' + state.hits
     : lv ? 'Distance ' + Math.floor(state.distance) + ' m'
-    : da ? 'Dogs ' + daDogCount()
+    : da ? ANIMALS[state.animal].plural.replace(/^./, c => c.toUpperCase()) + ' ' + daDogCount()
     : 'Passed ' + state.passed;
   ctx.fillText('Level ' + curLevel() + '  ·  ' + shownSpeed().toFixed(1) + ' m/s  ·  ' + extra, CW / 2, 236);
 
   ctx.fillStyle = '#5f7391'; ctx.font = '500 20px system-ui, sans-serif';
-  ctx.fillText('build ' + BUILD, CW / 2, 676);
+  ctx.fillText('build ' + BUILD, CW / 2, PH - 28);
 
   ctx.textAlign = 'left'; ctx.fillStyle = '#9fb3d1';
   if (ka) {
@@ -2067,10 +2243,12 @@ function drawPanel() {
     ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.font = '700 26px system-ui, sans-serif';
     ctx.fillText('ONE WIDE LANE  ·  CLUTTERED  ·  USE YOUR HANDS', 215 + 769 / 2, 489);
   } else if (lv) {
-    areaRow((LC.lavaWidth * state.scaleLV).toFixed(1) + ' m (' + (LC.lavaWidth * state.scaleLV / 0.3048).toFixed(0) + ' ft) wide  ·  path ' + lavaParams().width.toFixed(2) + ' m');
+    areaRows((LC.lavaWidth * state.scaleLV).toFixed(1) + ' m wide  ·  path ' + lavaParams().width.toFixed(2) + ' m');
   } else if (da) {
     const k = state.scaleDA, ft = m => (m / 0.3048).toFixed(1);
-    areaRow(ft(2 * DA.halfWidth * k) + ' × ' + ft(DA.depth * k) + ' ft, starts ' + ft(DA.startDist * k) + ' ft out');
+    areaRows(ft(2 * DA.halfWidth * k) + ' × ' + ft(DA.depth * k) + ' ft  ·  ' + ft(DA.startDist * k) + ' ft out');
+    grp(40, 454, 'DENSITY  ' + state.densityDA + ' / 10', daDogCount() + ' ' + ANIMALS[state.animal].plural);
+    grp(524, 454, ANIMALS[state.animal].name, 'ANIMAL  ' + (ANIMAL_IDS.indexOf(state.animal) + 1) + ' / ' + ANIMAL_IDS.length);
   } else if (hu) {
     ctx.font = '700 25px system-ui, sans-serif';
     ctx.fillText('SHOTS', 40, 405);
@@ -2092,7 +2270,7 @@ function drawPanel() {
   }
   if (hasDifficulty()) {
     ctx.textAlign = 'left'; ctx.fillStyle = '#9fb3d1'; ctx.font = '700 25px system-ui, sans-serif';
-    ctx.fillText('DIFFICULTY', 40, 487);
+    ctx.fillText('DIFFICULTY', 40, diffY() + 33);
   }
   ctx.textAlign = 'center';
 
@@ -2111,13 +2289,15 @@ function drawPanel() {
     if (b.id === 'faster' && curLevel() >= CONFIG.maxLevel) base = '#1a2236';
     if (b.id === 'densdown' && state.density <= 1) base = '#1a2236';
     if (b.id === 'densup' && state.density >= 10) base = '#1a2236';
+    if (b.id === 'dogdensdown' && state.densityDA <= 1) base = '#1a2236';
+    if (b.id === 'dogdensup' && state.densityDA >= 10) base = '#1a2236';
     if (b.id === 'shotsdown' && state.shots <= 1) base = '#1a2236';
     if (b.id === 'shotsup' && state.shots >= 10) base = '#1a2236';
     ctx.fillStyle = hov ? '#4cc9f0' : base;
     rr(b.x, b.y, b.w, b.h, 20); ctx.fill();
     if (sel && !hov) { ctx.strokeStyle = '#4cc9f0'; ctx.lineWidth = 4; rr(b.x, b.y, b.w, b.h, 20); ctx.stroke(); }
     ctx.fillStyle = hov ? '#0b1220' : '#ffffff';
-    const fs = b.id === 'toggle' ? 62 : b.id.startsWith('game') ? 34 : (b.id.startsWith('dens') || b.id.startsWith('shots') || b.id.startsWith('area')) ? 44
+    const fs = b.id === 'toggle' ? 62 : (b.id.startsWith('game') || b.id.startsWith('shift') || b.id.startsWith('anim')) ? 34 : (b.id.startsWith('dens') || b.id.startsWith('dogdens') || b.id.startsWith('shots') || b.id.startsWith('area')) ? 44
       : label.length > 9 ? 26 : b.h <= 70 ? 30 : 32;
     ctx.font = (b.id === 'toggle' ? '800 ' : '700 ') + fs + 'px system-ui, sans-serif';
     ctx.fillText(label, b.x + b.w / 2, b.y + b.h / 2 + 2);
@@ -2205,6 +2385,32 @@ function pressButton(id) {
         saveSettings();
         break;
       }
+      case 'shiftl':
+      case 'shiftr': {                                  // slide the play area sideways
+        const dir = id === 'shiftr' ? 1 : -1;
+        if (state.game === 'lava') {
+          state.shiftLV = Math.round(clamp(state.shiftLV + dir * LC.shiftStep, -LC.shiftMax, LC.shiftMax) * 10) / 10;
+          applyLavaShift();
+        } else if (state.game === 'dogattack') {
+          const old = state.shiftDA;
+          state.shiftDA = Math.round(clamp(old + dir * DA.shiftStep, -DA.shiftMax, DA.shiftMax) * 10) / 10;
+          applyDogShift(state.shiftDA - old);
+        }
+        saveSettings();
+        break;
+      }
+      case 'dogdensdown':
+      case 'dogdensup':
+        state.densityDA = clamp(state.densityDA + (id === 'dogdensup' ? 1 : -1), 1, 10);
+        resetDogAttack(); saveSettings();
+        break;
+      case 'animprev':
+      case 'animnext': {
+        const n = ANIMAL_IDS.length, i = ANIMAL_IDS.indexOf(state.animal);
+        state.animal = ANIMAL_IDS[(i + (id === 'animnext' ? 1 : n - 1)) % n];
+        resetDogAttack(); saveSettings();
+        break;
+      }
       case 'shotsdown':
       case 'shotsup':
         state.shots = clamp(state.shots + (id === 'shotsup' ? 1 : -1), 1, 10);
@@ -2233,6 +2439,7 @@ function pickButton(ctrl) {
   const hit = raycaster.intersectObject(panel, false)[0];
   if (!hit || !hit.uv) return { id: null, dist: null, onPanel: false };
   const cx = hit.uv.x * CW, cy = (1 - hit.uv.y) * CH;
+  if (cy > panelH()) return { id: null, dist: null, onPanel: false };
   const b = buttons.find(b => (!b.show || b.show()) && cx >= b.x && cx <= b.x + b.w && cy >= b.y && cy <= b.y + b.h);
   return { id: b ? b.id : null, dist: hit.distance, onPanel: true, point: hit.point };
 }
