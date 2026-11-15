@@ -38,7 +38,7 @@
 <script type="module">
 import * as THREE from 'three';
 
-const BUILD = 'tweaks-2';   // shown on the start screen and panel so you can tell which copy is loaded
+const BUILD = 'tweaks-4';   // shown on the start screen and panel so you can tell which copy is loaded
 document.getElementById('build').textContent = 'build ' + BUILD;
 
 /* ============================== CONFIG ============================== */
@@ -78,6 +78,7 @@ const CONFIG = {
     pathSlope: 0.9,            // steepest sideways slope of the guaranteed open route (sideways m per forward m), at slow speeds
     pathSlopeMin: 0.4,         // ... and the gentlest it is allowed to become at high speeds
     pathLatMax: 2.0,           // most sideways speed (m/s) the route asks of you: the slope shrinks as speed grows
+    zamEvery: 25, zamFirst: 14,   // Zamboni: about one every this many metres of travel (a Zamboni takes half the lane, so the route holds to the other half beside it), and the first one
     pathEdge: 0.2,             // the route swings out to within this distance of the lane edges
     pathMinHalf: 0.14,         // half-width (m) of the guaranteed open path through the clutter
     openMaxLow: 4.0, openMaxHigh: 1.5,   // no puck-wide strip of the lane may stay clear of objects longer than this (m), at density 1 / 10
@@ -775,9 +776,10 @@ templates.forEach((tpl, i) => {
   { obj: makeBucket, caps: [{ x0: 0, z0: 0, x1: 0, z1: 0, r: 0.18 }], ang: angAny, weight: 0.5, sh: [0.21, 0.21] },
   { obj: makeHelmet, caps: [{ x0: 0, z0: 0, x1: 0, z1: 0, r: 0.15 }], ang: angAny, weight: 0.5, sh: [0.19, 0.19] },
   { obj: makeWideNet, L: 1.1, r: 0.25, ang: angNet, weight: 1.5, sh: [0.6, 0.3] },
-  { obj: makeZamboni, L: 1.5, r: 0.42, ang: angZam, weight: 0.7, sh: [0.8, 0.46],
+  { obj: makeZamboni, L: 1.5, r: 0.42, ang: angZam, weight: 0, sh: [0.8, 0.46],   // placed on purpose beside a held stretch of the route, never at random
     xPick: () => (Math.random() < 0.5 ? -1 : 1) * IC.laneWidth / 4 + (Math.random() - 0.5) * 0.08 }    // fills one half of the lane
 ].forEach(d => INS.push({ tpl: inTpl(d.obj(), d.sh[0], d.sh[1]), caps: d.caps || capLine(d.L, d.r), ang: d.ang, weight: d.weight, xPick: d.xPick }));
+const ZAM_D = INS[INS.length - 1];
 const INS_WEIGHT = INS.reduce((a, d) => a + d.weight, 0);
 const pickIns = () => { let r = Math.random() * INS_WEIGHT; for (const d of INS) { r -= d.weight; if (r <= 0) return d; } return INS[INS.length - 1]; };
 
@@ -1153,7 +1155,7 @@ function updateTreadmill(dt) {
    Objects are scattered at random with a minimum clear gap between neighbours; the gap shrinks and the
    count grows with the density level. A hidden, gently wandering open path is always kept clear, so even
    at density 10 there is always a way through, but it needs toe drags and tight hands to follow it. */
-const IN = { items: [], path: [], nextChunk: 0, travel: 0, pathTarget: null, cover: {} };
+const IN = { items: [], path: [], nextChunk: 0, travel: 0, pathTarget: null, cover: {}, zamNext: 0, zamPending: false, zamSlots: [] };
 const IN_STRIPS = []; for (let c = -0.7; c < 0.71; c += 0.1) IN_STRIPS.push(Math.round(c * 10) / 10);
 const lerp = (a, b, t) => a + (b - a) * t;
 
@@ -1162,7 +1164,7 @@ function insanityParams() {
   return { target: lerp(IC.targetMin, IC.targetMax, t), gap: lerp(IC.gapMax, IC.gapMin, t) };
 }
 function resetInsanity() {
-  IN.items = []; IN.travel = 0; IN.nextChunk = 0; IN.cover = {};
+  IN.items = []; IN.travel = 0; IN.nextChunk = 0; IN.cover = {}; IN.zamNext = IC.zamFirst; IN.zamPending = false; IN.zamSlots = [];
   IN.path = [{ s: 0, x: (Math.random() * 2 - 1) * 0.4 }]; IN.pathTarget = null;
 }
 function extendPath(sEnd) {
@@ -1174,9 +1176,17 @@ function extendPath(sEnd) {
   while (IN.path[IN.path.length - 1].s < sEnd) {
     const last = IN.path[IN.path.length - 1];
     if (IN.pathTarget === null || Math.abs(last.x - IN.pathTarget) < 0.04) {
+      if (IN.zamPending) {                                      // the route has swung out to one side: hold it there while a Zamboni fills the other half
+        IN.zamPending = false;
+        IN.zamSlots.push({ s: last.s + IC.chunkLength * 1.5, x: -Math.sign(last.x) * IC.laneWidth / 4, done: false });
+        IN.zamNext = last.s + IC.zamEvery * (0.7 + Math.random() * 0.6);
+        for (let k = 0; k < 3; k++) IN.path.push({ s: IN.path[IN.path.length - 1].s + IC.chunkLength, x: last.x });
+        continue;
+      }
       const away = -Math.sign(last.x || (Math.random() - 0.5));
       const side = Math.random() < 0.8 ? away : -away;
-      IN.pathTarget = clamp(side * (0.25 + Math.random() * (half - 0.25)), -half, half);
+      if (last.s >= IN.zamNext) { IN.pathTarget = side * (0.45 + Math.random() * (half - 0.45)); IN.zamPending = true; }
+      else IN.pathTarget = clamp(side * (0.25 + Math.random() * (half - 0.25)), -half, half);
     }
     const max = slope * IC.chunkLength;
     IN.path.push({ s: last.s + IC.chunkLength, x: last.x + clamp(IN.pathTarget - last.x, -max, max) });
@@ -1229,17 +1239,25 @@ function capsClearOfPath(caps, half) {                        // sample along ev
   return true;
 }
 /* Try to drop one random object into the chunk starting at g. forceX (optional) aims it at a particular strip of the lane. */
-function tryPlaceInsanity(g, gap, half, forceX) {
-  const d = pickIns(), th = d.ang();
+function tryPlaceInsanity(g, gap, half, forceX, forceD, forceS) {
+  const d = forceD || pickIns(), th = d.ang();
   const rel = capsAt(d, 0, 0, th);                              // how far it reaches sideways, so it stays inside the lane
   let ext = 0; rel.forEach(k => { ext = Math.max(ext, Math.abs(k.x0) + k.r, Math.abs(k.x1) + k.r); });
   const lim = IC.laneWidth / 2 + 0.12 - ext;
   if (lim < 0) return false;
-  const x = forceX !== undefined ? clamp(forceX + (Math.random() - 0.5) * 0.3, -lim, lim)
+  const x = forceX !== undefined ? clamp(forceX + (Math.random() - 0.5) * (forceD ? 0.12 : 0.3), -lim, lim)
     : d.xPick ? clamp(d.xPick(), -lim, lim) : (Math.random() * 2 - 1) * lim;
-  const s = g + Math.random() * IC.chunkLength;
+  const s = forceS !== undefined ? forceS + (Math.random() - 0.5) * 0.4 : g + Math.random() * IC.chunkLength;
   const caps = capsAt(d, x, s, th);
   if (!capsClearOfPath(caps, half)) return false;               // keep the open route clear
+  if (!forceD) for (const z of IN.zamSlots) {                   // keep room free for a Zamboni that is coming up
+    if (z.done) continue;
+    for (const k of caps) {
+      const m = 0.42 + k.r + gap * 0.8, mm = 0.75 + k.r + gap * 0.8;
+      if ((Math.abs(k.x0 - z.x) < m && Math.abs(k.s0 - z.s) < mm) || (Math.abs(k.x1 - z.x) < m && Math.abs(k.s1 - z.s) < mm)
+        || (Math.abs((k.x0 + k.x1) / 2 - z.x) < m && Math.abs((k.s0 + k.s1) / 2 - z.s) < mm)) return false;
+    }
+  }
   let rb = 0; rel.forEach(k => { rb = Math.max(rb, Math.hypot(k.x0, k.s0) + k.r, Math.hypot(k.x1, k.s1) + k.r); });
   for (const o of IN.items) {                                   // keep a gap around every neighbour
     const dx = o.x - x, ds = o.s - s, reach = o.rb + rb + gap;
@@ -1262,6 +1280,12 @@ function generateInsanityChunk(g) {
   extendPath(g + IC.chunkLength * 3);
   const half = Math.max(IC.pathMinHalf, Math.min(gap / 2, IC.pathMinHalf + IC.pathExtra));   // narrow corridor: no wide open lane
   const count = Math.round(target * IC.chunkLength * (0.7 + Math.random() * 0.6));
+  for (const z of IN.zamSlots) {                                // a Zamboni due in this chunk goes in first, while there is still room
+    if (z.done || z.s < g || z.s >= g + IC.chunkLength) continue;
+    z.done = true;
+    for (let t = 0; t < 40; t++) if (tryPlaceInsanity(g, IC.gapMin * 0.8, half, z.x, ZAM_D, z.s)) break;
+  }
+  IN.zamSlots = IN.zamSlots.filter(z => z.s > g - 2);
   let placed = 0, tries = 0;
   while (placed < count && tries < 300) { tries++; if (tryPlaceInsanity(g, gap, half)) placed++; }
   // no strip of the lane may stay clear for long: if one has, put something across it
