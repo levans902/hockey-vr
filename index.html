@@ -32,8 +32,6 @@
   <p>Clear your floor, put on your Quest 3, and tap below. Use the arrows on the floating panel to pick a game: <b>Endless Object Treadmill</b> sends objects down several lanes, <b>Keep Away</b> puts opposing defencemen on the ice around you, <b>Insanity</b> fills one wide lane with clutter that needs toe drags and fancy hands, <b>Heads Up!</b> sends a wiggling zig-zag training aid down the lane while a French bulldog fires cannonballs at your head, so you have to duck while you stickhandle, <b>The Floor Is Lava</b> turns the floor into lava with a winding path you have to keep your puck on, and <b>Dog Attack</b> fills a small patch of floor with wandering French bulldogs (or sharks, or T-rexes) you have to stickhandle around. Point a controller (or pinch with your hand) at the panel to adjust the settings, then start.</p>
   <button id="enter" disabled>Checking MR support…</button>
   <div id="msg"></div>
-  <button id="camBtn" style="margin-top:14px;background:#24324d;font-size:1rem;padding:.7rem 1.2rem">Enable camera (for the Camera Test beta)</button>
-  <div id="camMsg" style="color:#9fb3d1;font-size:.85rem;margin-top:6px;min-height:1.2em"></div>
   <div id="build" style="color:#5f7391;font-size:.8rem"></div>
 </div>
 
@@ -159,7 +157,7 @@ const CONFIG = {
     sound: true, volume: 0.5,
     startLevel: 2, startShots: 4
   },
-  getOut: {                    // GET OUT OF THE WAY
+  getOut: {                    // DUCK!
     distance: 4.5,             // metres in front of you the shooters stand
     spacing: 1.5, stagger: 0.5, drift: 0.3,   // sideways gap between shooters, every other one stands this much closer, how far they sway
     speedBase: 2.5, speedStep: 0.8,           // puck speed (m/s) at speed level 0, and extra m/s per level (level 10 = 10.5 m/s)
@@ -193,15 +191,6 @@ const CONFIG = {
     speedMin: 0.3, speedMax: 1.0,             // m/s at speed 1 and speed 10 (steps evenly between)
     spawnDist: 5.0, firstRow: 1.0,            // sticks appear this far in front of you; the nearest one on loading
     startLevel: 2
-  },
-  camTest: {                   // CAMERA TEST (beta)
-    procW: 192, procH: 144,    // the camera picture is shrunk to this before scanning (smaller = faster)
-    minPixels: 10,             // a colour blob smaller than this (in the shrunk picture) is ignored
-    monitorPos: [0.95, 1.3, -1.2],   // where the floating monitor hangs (x, y, z in the play area)
-    zones: [[-0.6, -0.6], [0, -0.6], [0.6, -0.6], [-0.6, -1.1], [0, -1.1], [0.6, -1.1]],   // floor ring centres (x, z in metres)
-    zoneRadiusEasy: 0.36, zoneRadiusHard: 0.2,   // ring radius at level 1 / 10
-    holdTime: 0.35,            // seconds the puck must stay inside the ring to score
-    startLevel: 3
   },
   keepAway: {
     defenderScale: 1.0,        // 1.0 = roughly full-size defenceman (about 1.8 m tall)
@@ -252,14 +241,10 @@ const state = {
   shiftLV: 0,                  // The Floor Is Lava: same
   densityDA: 4,                // Dog Attack: how many animals, 1 to 10
   animal: 'dog',               // Dog Attack: dog | shark | trex
-  levelCT: CONFIG.camTest.startLevel,  // Camera Test: ring size level
-  camColor: 'orange',          // Camera Test: orange | green | pink | blue | custom
-  camFov: 74,                  // Camera Test: assumed camera field of view (degrees)
-  camTilt: 0,                  // Camera Test: assumed camera tilt (degrees, positive = looks further down)
   levelSS: CONFIG.sticks.startLevel,   // Stick Traffic speed level
   stickMode: 'standard',       // Stick Traffic: standard | flipped | inverted
-  levelGO: CONFIG.getOut.startLevel,   // Get Out Of The Way speed level
-  shooters: CONFIG.getOut.startShooters, // Get Out Of The Way: number of shooters 1-5
+  levelGO: CONFIG.getOut.startLevel,   // Duck! speed level
+  shooters: CONFIG.getOut.startShooters, // Duck!: number of shooters 1-5
   levelST: CONFIG.storm.startLevel,    // Puck Storm speed level
   widthST: CONFIG.storm.widthStart, // Puck Storm: width of the area (m)
   densityST: CONFIG.storm.startDensity,// Puck Storm density 1-10
@@ -304,24 +289,21 @@ const GAMES = [
   { id: 'headsup',   name: 'HEADS UP!' },
   { id: 'lava',      name: 'THE FLOOR IS LAVA' },
   { id: 'dogattack', name: 'DOG ATTACK' },
-  { id: 'goaway',    name: 'GET OUT OF THE WAY' },
+  { id: 'goaway',    name: 'DUCK!' },
   { id: 'storm',     name: 'PUCK STORM' },
-  { id: 'sticks',    name: 'STICK TRAFFIC' },
-  { id: 'camtest',   name: 'CAMERA TEST (BETA)' }
+  { id: 'sticks',    name: 'STICK TRAFFIC' }
 ];
 const IC = CONFIG.insanity;
 const HC = CONFIG.headsUp;
 const curLevel = () => (state.game === 'keepaway' ? state.levelKA : state.game === 'insanity' ? state.levelIN
   : state.game === 'headsup' ? state.levelHU : state.game === 'lava' ? state.levelLV
   : state.game === 'dogattack' ? state.levelDA : state.game === 'goaway' ? state.levelGO
-  : state.game === 'storm' ? state.levelST : state.game === 'sticks' ? state.levelSS
-  : state.game === 'camtest' ? state.levelCT : state.level);
+  : state.game === 'storm' ? state.levelST : state.game === 'sticks' ? state.levelSS : state.level);
 const shownSpeed = () => (state.game === 'keepaway' ? attackSpeedFor(state.levelKA)
   : state.game === 'dogattack' ? daSpeed(state.levelDA)
   : state.game === 'goaway' ? goSpeed()
   : state.game === 'storm' ? stSpeed()
   : state.game === 'sticks' ? skSpeed(state.levelSS)
-  : state.game === 'camtest' ? 0
   : speedFor(state.game === 'insanity' ? state.levelIN : state.game === 'headsup' ? state.levelHU : state.game === 'lava' ? state.levelLV : state.level));
 
 /* ---------- remember settings between sessions ---------- */
@@ -338,11 +320,6 @@ const SAVE_KEY = 'stickMR.v2';
     if (Number.isInteger(s.levelHU)) state.levelHU = clamp(s.levelHU, CONFIG.minLevel, CONFIG.maxLevel);
     if (Number.isInteger(s.shots)) state.shots = clamp(s.shots, 1, 10);
     if (Number.isInteger(s.levelLV)) state.levelLV = clamp(s.levelLV, CONFIG.minLevel, CONFIG.maxLevel);
-    if (Number.isInteger(s.levelCT)) state.levelCT = clamp(s.levelCT, CONFIG.minLevel, CONFIG.maxLevel);
-    if (['orange', 'green', 'pink', 'blue', 'custom'].includes(s.camColor)) state.camColor = s.camColor;
-    if (Number.isFinite(s.camFov)) state.camFov = clamp(Math.round(s.camFov), 50, 110);
-    if (Number.isFinite(s.camTilt)) state.camTilt = clamp(Math.round(s.camTilt), -25, 25);
-    if (s.camCustom && typeof s.camCustom === 'object') globalThis.__camCustom = s.camCustom;
     if (Number.isInteger(s.levelSS)) state.levelSS = clamp(s.levelSS, CONFIG.minLevel, CONFIG.maxLevel);
     if (['standard', 'flipped', 'inverted'].includes(s.stickMode)) state.stickMode = s.stickMode;
     if (Number.isInteger(s.levelGO)) state.levelGO = clamp(s.levelGO, CONFIG.minLevel, CONFIG.maxLevel);
@@ -370,7 +347,6 @@ function saveSettings() {
       levelKA: state.levelKA, levelIN: state.levelIN, density: state.density,
       levelHU: state.levelHU, shots: state.shots, levelLV: state.levelLV,
       levelDA: state.levelDA, scaleDA: state.scaleDA, scaleLV: state.scaleLV,
-      levelCT: state.levelCT, camColor: state.camColor, camFov: state.camFov, camTilt: state.camTilt, camCustom: globalThis.__camCustom || null,
       levelSS: state.levelSS, stickMode: state.stickMode, levelGO: state.levelGO, levelST: state.levelST, shooters: state.shooters, densityST: state.densityST, widthST: state.widthST,
       shiftDA: state.shiftDA, shiftLV: state.shiftLV, densityDA: state.densityDA, animal: state.animal, game: state.game, panel: state.panelPose })); } catch (e) {}
 }
@@ -460,7 +436,7 @@ kaRing.rotation.x = -Math.PI / 2; kaRing.position.y = 0.003;
 world.add(kaRing);
 function applyGameVisuals() {
   rebuildLanes();                                   // N lanes, or one wide lane for Insanity
-  laneGroup.visible = !['keepaway', 'lava', 'dogattack', 'goaway', 'camtest'].includes(state.game);
+  laneGroup.visible = !['keepaway', 'lava', 'dogattack', 'goaway'].includes(state.game);
   kaRing.visible = state.game === 'keepaway';
 }
 applyGameVisuals();
@@ -2188,9 +2164,9 @@ function updateDogAttack(dt, active) {
 }
 resetDogAttack();
 
-/* ============================== GET OUT OF THE WAY / PUCK STORM ============================== */
+/* ============================== DUCK! / PUCK STORM ============================== */
 /* Two puck-dodging modes that share one puck pool, one hit test and the red hit tint from Heads Up!.
-   GET OUT OF THE WAY: 1-5 hockey players stand in a fan about GC.distance metres out. Each winds up (the puck
+   DUCK!: 1-5 hockey players stand in a fan about GC.distance metres out. Each winds up (the puck
    glows on its blade), then slaps a puck at you. The aim point is picked at the moment of the shot, anywhere
    between your feet and your headset, so it can be a floor-level slider or a head-high shot.
    PUCK STORM: pucks flow toward you like the Insanity objects, at random heights and places, mixed with
@@ -2270,32 +2246,86 @@ function clearPucks() {
   while (PK.stars.length) removeStar(PK.stars.length - 1);
 }
 
-/* ---------- GET OUT OF THE WAY: shooters ---------- */
+/* ---------- DUCK!: shooters ---------- */
 const JERSEYS = [0xd62828, 0x2a6fdb, 0x2a9d58, 0xf4a261, 0x8e44ad];
-const _bladeP = { x: 0.18, y: 0.03, z: 0.75 };                       // where the puck rests, in shooter-local coordinates
+const _bladeP = { x: 0.14, y: 0.03, z: 0.97 };                       // where the puck rests, in shooter-local coordinates
+const HOCKEY = {                                                      // shared materials for the players
+  pants: std(0x15181f, { roughness: 0.85 }), boot: std(0x0f1115, { roughness: 0.5 }), steel: std(0xb9c2cc, { roughness: 0.25, metalness: 0.8 }),
+  glove: std(0x1c1f26, { roughness: 0.8 }), helmet: std(0x14171d, { roughness: 0.4 }), white: std(0xf2f2f2, { roughness: 0.7 }),
+  shaft: std(0x15171c, { roughness: 0.45 }), blade: std(0x1b1d22, { roughness: 0.5 }),
+  visor: new THREE.MeshStandardMaterial({ color: 0xbfe6ff, transparent: true, opacity: 0.3, roughness: 0.1, depthWrite: false }),
+  eye: new THREE.MeshBasicMaterial({ color: 0x20150e })
+};
+const HIP = 0.88;                                                     // hip height: a hockey crouch, not standing straight
+const HAND_TOP = { x: 0.08, y: 1.02, z: 0.42 }, BLADE_TIP = { x: 0.2, y: 0.03, z: 0.9 }, HAND_GAP = 0.25, SHOULDER = { x: 0.31, y: 0.55 };
 function makeShooter(i) {
-  const g = new THREE.Group(), jer = std(JERSEYS[i % JERSEYS.length], { roughness: 0.7 }), pants = std(0x1b2230, { roughness: 0.8 });
-  g.add(cyl(0.075, 0.07, 0.85, pants, -0.1, 0.43, 0, 12), cyl(0.075, 0.07, 0.85, pants, 0.1, 0.43, 0, 12));
-  g.add(box(0.46, 0.58, 0.26, jer, 0, 1.13, 0));
-  g.add(box(0.48, 0.12, 0.28, pants, 0, 0.85, 0));
-  g.add(mesh(new THREE.SphereGeometry(0.1, 14, 12), pkMat.skin, 0, 1.55, 0.02));
-  const helm = mesh(new THREE.SphereGeometry(0.125, 14, 12), jer, 0, 1.59, 0); helm.scale.y = 0.85; g.add(helm);
-  const armL = cyl(0.04, 0.04, 0.55, jer, -0.3, 1.1, 0.1, 8); armL.rotation.x = 0.7; g.add(armL);
-  // stick pivots at the hands; its children are positioned relative to the hands
-  const pivot = new THREE.Group(); pivot.position.set(0.15, 0.95, 0.3); g.add(pivot);
-  const H = new THREE.Vector3(0.15, 0.95, 0.3), B = new THREE.Vector3(0.2, 0.04, 0.75);
-  const dir = H.clone().sub(B).normalize(), len = 1.55;
-  const shaft = cyl(0.014, 0.014, len, pkMat.stick, 0, 0, 0, 6);
-  shaft.position.copy(B).sub(H).addScaledVector(dir, len / 2); shaft.quaternion.setFromUnitVectors(UP, dir); pivot.add(shaft);
-  const blade = box(0.3, 0.06, 0.025, pkMat.stick, 0, 0, 0); blade.position.set(B.x - H.x - 0.1, B.y - H.y + 0.03, B.z - H.z); pivot.add(blade);
-  const tape = box(0.3, 0.02, 0.03, pkMat.tape, 0, 0, 0); tape.position.copy(blade.position); tape.position.y -= 0.015; pivot.add(tape);
-  const arm2 = cyl(0.04, 0.04, 0.55, jer, 0.27, 1.05, 0.15, 8); arm2.rotation.x = 1.0; g.add(arm2);
-  // the puck waiting on the blade, with a glowing warning ring
+  const g = new THREE.Group(), jer = std(JERSEYS[i % JERSEYS.length], { roughness: 0.7 }), H = HOCKEY;
+  const skin = pkMat.skin;
+  // ---- legs: skates, socks, knee pads, hockey pants ----
+  for (const sx of [-1, 1]) {
+    const leg = new THREE.Group(); leg.position.set(sx * 0.11, HIP, 0); leg.rotation.z = sx * 0.07; leg.scale.y = HIP; g.add(leg);   // legs were modelled 1 m long: squashed to the crouch
+    leg.add(box(0.025, 0.055, 0.36, H.steel, 0, -0.955, 0.03));            // skate blade
+    leg.add(box(0.04, 0.05, 0.2, H.boot, 0, -0.915, 0.03));                // holder
+    leg.add(box(0.115, 0.13, 0.30, H.boot, 0, -0.84, 0.04));               // boot
+    leg.add(mesh(new THREE.SphereGeometry(0.06, 10, 8), H.boot, 0, -0.84, 0.17));   // toe cap
+    leg.add(cyl(0.06, 0.052, 0.34, jer, 0, -0.64, 0, 10));                 // sock
+    leg.add(cyl(0.063, 0.063, 0.045, H.white, 0, -0.6, 0, 10));            // sock stripe
+    leg.add(box(0.12, 0.11, 0.13, H.pants, 0, -0.44, 0.045));              // knee pad
+    leg.add(cyl(0.1, 0.085, 0.5, H.pants, 0, -0.2, 0, 12));                // pants leg
+  }
+  g.add(box(0.46, 0.22, 0.29, H.pants, 0, HIP, 0));                        // hips
+  // ---- upper body (leans a little) ----
+  const upper = new THREE.Group(); upper.position.set(0, HIP, 0); g.add(upper);
+  upper.add(box(0.47, 0.5, 0.29, jer, 0, 0.27, 0));                        // jersey
+  upper.add(box(0.485, 0.06, 0.305, H.white, 0, 0.065, 0));                // hem stripe
+  upper.add(box(0.485, 0.03, 0.305, H.white, 0, 0.16, 0));                 // second stripe
+  upper.add(box(0.64, 0.13, 0.35, jer, 0, 0.55, 0));                       // shoulder pads
+  for (const sx of [-1, 1]) { const cap = mesh(new THREE.SphereGeometry(0.095, 10, 8), jer, sx * 0.32, 0.55, 0); cap.scale.set(1, 0.9, 1.1); upper.add(cap); }
+  const crest = cyl(0.075, 0.075, 0.012, H.white, 0, 0.38, 0.148, 16); crest.rotation.x = Math.PI / 2; upper.add(crest);
+  const crest2 = cyl(0.05, 0.05, 0.014, jer, 0, 0.38, 0.15, 16); crest2.rotation.x = Math.PI / 2; upper.add(crest2);
+  upper.add(cyl(0.05, 0.056, 0.09, skin, 0, 0.63, 0, 10));                // neck
+  // ---- head: face, helmet with ear guards, visor ----
+  const head = new THREE.Group(); head.position.set(0, 0.75, 0.02); upper.add(head);
+  const face = mesh(new THREE.SphereGeometry(0.095, 14, 12), skin, 0, -0.005, 0.012); face.scale.y = 1.08; head.add(face);
+  for (const sx of [-1, 1]) head.add(box(0.022, 0.016, 0.012, H.eye, sx * 0.037, 0.005, 0.098));    // eyes
+  head.add(box(0.05, 0.012, 0.01, std(0x8a4a3a, { roughness: 0.8 }), 0, -0.05, 0.095));              // mouth
+  const helm = mesh(new THREE.SphereGeometry(0.13, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.52), H.helmet, 0, 0.012, -0.005); helm.scale.set(1, 0.95, 1.08); head.add(helm);
+  head.add(box(0.2, 0.025, 0.05, H.helmet, 0, 0.055, 0.115));              // brim over the visor
+  head.add(box(0.14, 0.012, 0.012, jer, 0, 0.1, 0.12));                    // team-colour helmet stripe
+  for (const sx of [-1, 1]) { head.add(box(0.03, 0.09, 0.085, H.helmet, sx * 0.125, -0.025, 0)); head.add(box(0.012, 0.045, 0.012, H.helmet, sx * 0.1, -0.075, 0.07)); }   // ear guards, chin strap
+  const visor = box(0.19, 0.095, 0.01, H.visor, 0, -0.005, 0.118); visor.rotation.x = -0.12; head.add(visor);
+  // ---- stick: pivots at the top hand; gloves ride on it, arms are stretched to them each frame ----
+  const pivot = new THREE.Group(); pivot.position.set(HAND_TOP.x, HAND_TOP.y, HAND_TOP.z); g.add(pivot);
+  const hv = new THREE.Vector3(HAND_TOP.x, HAND_TOP.y, HAND_TOP.z), bv = new THREE.Vector3(BLADE_TIP.x, BLADE_TIP.y, BLADE_TIP.z);
+  const dir = hv.clone().sub(bv).normalize(), reach = hv.distanceTo(bv), len = reach + 0.13;
+  const shaft = cyl(0.014, 0.012, len, H.shaft, 0, 0, 0, 6);
+  shaft.position.copy(bv).sub(hv).addScaledVector(dir, len / 2); shaft.quaternion.setFromUnitVectors(UP, dir); pivot.add(shaft);
+  const butt = cyl(0.017, 0.017, 0.1, H.white, 0, 0, 0, 6); butt.position.copy(shaft.position).addScaledVector(dir, len / 2 - 0.05); butt.quaternion.copy(shaft.quaternion); pivot.add(butt);
+  const bl = box(0.3, 0.065, 0.022, H.blade, 0, 0, 0); bl.position.set(BLADE_TIP.x - hv.x - 0.1, BLADE_TIP.y - hv.y + 0.032, BLADE_TIP.z - hv.z); pivot.add(bl);
+  const tp = box(0.3, 0.02, 0.026, H.white, 0, 0, 0); tp.position.copy(bl.position); tp.position.y += 0.02; pivot.add(tp);
+  const gTop = box(0.1, 0.1, 0.13, H.glove, 0, 0, 0); pivot.add(gTop);
+  const lowOff = dir.clone().multiplyScalar(-HAND_GAP);                   // lower hand: a bit down the shaft
+  const gLow = box(0.1, 0.1, 0.13, H.glove, lowOff.x, lowOff.y, lowOff.z); pivot.add(gLow);
+  const arms = [-1, 1].map(sx => { const a = cyl(0.058, 0.046, 1, jer, 0, 0, 0, 8); g.add(a); return { m: a, sx, off: sx < 0 ? { x: 0, y: 0, z: 0 } : { x: lowOff.x, y: lowOff.y, z: lowOff.z } }; });
+  // ---- the puck waiting on the blade, with a glowing warning ring, and a shadow ----
   const puck = puckTemplate.clone(); puck.position.set(_bladeP.x, _bladeP.y, _bladeP.z); g.add(puck);
   const ring = new THREE.Mesh(new THREE.RingGeometry(0.12, 0.17, 24), pkMat.ring); ring.rotation.x = -Math.PI / 2;
   ring.position.set(_bladeP.x, 0.01, _bladeP.z); g.add(ring);
-  const sh = new THREE.Mesh(shadowGeo, mat.shadow); sh.rotation.x = -Math.PI / 2; sh.position.y = 0.004; sh.scale.setScalar(0.45); g.add(sh);
-  return { g, pivot, puck, ring, state: 'wait', t: 0, wait: 0, yaw: 0, baseX: 0, ph: Math.random() * 6.28, x: 0, z: 0, fired: false };
+  const sh = new THREE.Mesh(shadowGeo, mat.shadow); sh.rotation.x = -Math.PI / 2; sh.position.y = 0.004; sh.scale.setScalar(0.5); g.add(sh);
+  const s = { g, pivot, upper, arms, puck, ring, state: 'wait', t: 0, wait: 0, yaw: 0, baseX: 0, ph: Math.random() * 6.28, x: 0, z: 0, fired: false };
+  posePlayer(s); return s;
+}
+const _a = new THREE.Vector3();
+function posePlayer(s) {                                                  // lean with the swing and stretch both arms from the shoulders to the gloves
+  const a = s.pivot.rotation.x, lean = 0.3 - 0.12 * a, ca = Math.cos(lean), sa = Math.sin(lean), cp = Math.cos(a), sp = Math.sin(a);
+  s.upper.rotation.x = lean;
+  s.arms.forEach(arm => {
+    const Sx = arm.sx * SHOULDER.x, Sy = HIP + SHOULDER.y * ca, Sz = SHOULDER.y * sa;
+    const gy = arm.off.y * cp - arm.off.z * sp, gz = arm.off.y * sp + arm.off.z * cp;          // glove offset rotated by the stick's swing
+    const Gx = HAND_TOP.x + arm.off.x, Gy = HAND_TOP.y + gy, Gz = HAND_TOP.z + gz;
+    _a.set(Gx - Sx, Gy - Sy, Gz - Sz); const L = _a.length() || 1;
+    arm.m.position.set((Sx + Gx) / 2, (Sy + Gy) / 2, (Sz + Gz) / 2); arm.m.scale.y = L; arm.m.quaternion.setFromUnitVectors(UP, _a.multiplyScalar(1 / L));
+  });
 }
 function layoutShooters() {
   const n = state.shooters;
@@ -2305,12 +2335,12 @@ function layoutShooters() {
     s.x = s.baseX; s.state = 'wait'; s.t = 0;
     s.wait = GC.firstShot + i * 0.55 + Math.random() * 0.8;
     s.g.position.set(s.x, 0, s.z); s.yaw = 0; s.g.rotation.y = 0;
-    s.pivot.rotation.x = 0; s.ring.visible = false; s.puck.visible = true;
+    s.pivot.rotation.x = 0; s.ring.visible = false; s.puck.visible = true; posePlayer(s);
   });
 }
 function resetGoAway() {
   clearPucks(); HU.puffs.forEach(f => { world.remove(f.m); f.m.material.dispose(); }); HU.puffs.length = 0;
-  PK.shooters.forEach(s => world.remove(s.g)); PK.shooters.length = 0;
+  clearShooters();
   if (state.game !== 'goaway') return;
   for (let i = 0; i < state.shooters; i++) { const s = makeShooter(i); world.add(s.g); PK.shooters.push(s); }
   layoutShooters();
@@ -2327,7 +2357,7 @@ function updateShooters(dt, pl, active) {
       const want = Math.atan2(pl.x - s.x, pl.z - s.z); let d = want - s.yaw; d = Math.atan2(Math.sin(d), Math.cos(d));
       s.yaw += d * (1 - Math.exp(-4 * dt)); s.g.rotation.y = s.yaw;
     }
-    if (!active) { s.pivot.rotation.x = 0; s.ring.visible = false; return; }
+    if (!active) { s.pivot.rotation.x = 0; s.ring.visible = false; posePlayer(s); return; }
     s.t += dt;
     if (s.state === 'wait') {
       s.pivot.rotation.x *= Math.exp(-6 * dt);
@@ -2335,11 +2365,11 @@ function updateShooters(dt, pl, active) {
       if (s.t >= s.wait) { s.state = 'wind'; s.t = 0; s.fired = false; sfx('ping', s.x / 3); }
     } else if (s.state === 'wind') {
       const T = telegraphGO(), u = Math.min(1, s.t / T);
-      s.pivot.rotation.x = -1.1 * Math.sin(u * Math.PI / 2);             // stick goes back
+      s.pivot.rotation.x = 1.1 * Math.sin(u * Math.PI / 2);              // stick goes back and up
       const pulse = 0.5 + 0.5 * Math.sin(s.t * 26);
       s.ring.visible = true; s.ring.scale.setScalar(1 + 0.35 * pulse + (1 - u) * 0.4); s.ring.material.opacity = 0.55 + 0.4 * pulse;
       if (u >= 1) {                                                     // fire!
-        s.pivot.rotation.x = 0.35;                                      // stick whips through
+        s.pivot.rotation.x = -0.5;                                      // stick whips through
         s.puck.getWorldPosition(_sp); world.worldToLocal(_sp);
         const ty = GC.floorY + Math.random() * Math.max(0.05, pl.y - 0.03 - GC.floorY);   // anywhere between feet and head
         const tx = pl.x + (Math.random() * 2 - 1) * GC.aimNoise;
@@ -2352,6 +2382,7 @@ function updateShooters(dt, pl, active) {
       s.pivot.rotation.x += (0 - s.pivot.rotation.x) * (1 - Math.exp(-5 * dt));
       if (s.t > 0.45) { s.state = 'wait'; s.t = 0; s.wait = GC.interval * (0.65 + Math.random() * 0.7); s.puck.visible = true; }
     }
+    posePlayer(s);
   });
 }
 
@@ -2443,7 +2474,11 @@ function updateGoAway(dt) {
   updateShooters(dt, pl, true); updatePucks(dt, pl); updatePuffs(dt);
 }
 function idleGoAway(dt) { updateShooters(dt, playerLocal(), false); }
-function resetPuckModes() { if (state.game === 'storm') resetStorm(); else resetGoAway(); }
+function clearShooters() { PK.shooters.forEach(s => world.remove(s.g)); PK.shooters.length = 0; }
+function resetPuckModes() {
+  clearShooters();                                   // players belong to Duck! only: never leave them standing in another mode
+  if (state.game === 'storm') resetStorm(); else resetGoAway();
+}
 resetPuckModes();
 
 /* ============================== STICK TRAFFIC ============================== */
@@ -2513,252 +2548,9 @@ function updateSticks(dt) {
 }
 resetSticks();
 
-/* ============================== CAMERA TEST (beta) ============================== */
-/* An experiment to find out whether the Quest's camera can track a real puck from inside this web app.
-   The browser may hand the page a camera stream through getUserMedia(), the web app can't get Meta's proper
-   Passthrough Camera API. The stream carries no head pose and no lens data, so everything here is approximate:
-     1. frames are shrunk to CT.procW x CT.procH and scanned for pixels of a chosen colour (a bright puck,
-        ball or sticker; a black puck on a dark floor will mostly NOT work),
-     2. the biggest cluster of matching pixels is the "puck",
-     3. its pixel is turned into a ray using an assumed field of view and the headset's CURRENT pose, and
-        intersected with the floor (you can tune FOV and TILT until the floor ring lands on your puck).
-   A floating monitor shows the camera picture, what was detected and some stats (frames per second, processing
-   time, how often the puck was seen, camera delay if the browser reports it).
-   The game ("Zone Hop"): a ring on the floor lights up; move your puck into it and hold for a moment to score. */
-const CT = CONFIG.camTest;
-const CAM = { stream: null, video: null, ok: false, status: 'camera off', err: '', info: '', devices: '',
-  proc: null, pctx: null, img: null, newFrame: false, lastFrameAt: 0, frames: 0, fpsCount: 0, fpsT: 0, fps: 0, procMs: 0,
-  seen: [], det: { ok: false, x: 0, y: 0, n: 0, total: 0, sx: 0, sy: 0 }, lostFor: 9, floor: null, lagMs: null, hasRvfc: false,
-  custom: null, monT: 0, procT: 0, hold: 0, zone: 0, lastSeenAt: -9 };
-const CAM_COLORS = {
-  orange: { mode: 'hue', h: 22, hw: 14, sMin: 0.55, vMin: 0.45, css: '#ff8a1f' },
-  green:  { mode: 'hue', h: 115, hw: 28, sMin: 0.4, vMin: 0.35, css: '#3ddc5a' },
-  pink:   { mode: 'hue', h: 330, hw: 24, sMin: 0.35, vMin: 0.5, css: '#ff4fa3' },
-  blue:   { mode: 'hue', h: 215, hw: 22, sMin: 0.5, vMin: 0.35, css: '#3d8bff' }
-};
-const camTarget = () => (state.camColor === 'custom' && CAM.custom ? CAM.custom : CAM_COLORS[state.camColor] || CAM_COLORS.orange);
-
-function rgbToHsv(r, g, b) {
-  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
-  let h = 0;
-  if (d > 0) { if (mx === r) h = ((g - b) / d + 6) % 6; else if (mx === g) h = (b - r) / d + 2; else h = (r - g) / d + 4; h *= 60; }
-  return [h, mx > 0 ? d / mx : 0, mx / 255];
-}
-/* find the puck: count pixels that match the target colour, then take the best 3x3 block of 12 px cells so a few
-   stray pixels elsewhere don't drag the answer around. data = RGBA bytes. */
-function detectBlob(data, W, H, T) {
-  const C = 12, cw = Math.ceil(W / C), ch = Math.ceil(H / C);
-  const cnt = new Float32Array(cw * ch), sx = new Float32Array(cw * ch), sy = new Float32Array(cw * ch);
-  let total = 0;
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    const i = (y * W + x) * 4, r = data[i], g = data[i + 1], b = data[i + 2];
-    let m = false;
-    if (T.mode === 'dark') { m = Math.max(r, g, b) / 255 < T.vMax; }
-    else {
-      const [h, s, v] = rgbToHsv(r, g, b);
-      let dh = Math.abs(h - T.h); if (dh > 180) dh = 360 - dh;
-      m = dh <= T.hw && s >= T.sMin && v >= T.vMin;
-    }
-    if (m) { const k = ((y / C) | 0) * cw + ((x / C) | 0); cnt[k]++; sx[k] += x; sy[k] += y; total++; }
-  }
-  let best = -1, bi = 0, bj = 0;
-  for (let j = 0; j < ch; j++) for (let i = 0; i < cw; i++) {
-    let s = 0;
-    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const jj = j + dj, ii = i + di; if (jj >= 0 && jj < ch && ii >= 0 && ii < cw) s += cnt[jj * cw + ii]; }
-    if (s > best) { best = s; bi = i; bj = j; }
-  }
-  let n = 0, mx = 0, my = 0;
-  for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const jj = bj + dj, ii = bi + di;
-    if (jj >= 0 && jj < ch && ii >= 0 && ii < cw) { const k = jj * cw + ii; n += cnt[k]; mx += sx[k]; my += sy[k]; } }
-  if (n < CT.minPixels) return { ok: false, x: 0, y: 0, n, total };
-  return { ok: true, x: mx / n, y: my / n, n, total };
-}
-/* a pixel in the camera picture -> a direction in the headset's frame -> rotated by the headset orientation q */
-function pixelRay(px, py, W, H, fovDeg, tiltDeg, q) {
-  const th = Math.tan(fovDeg * Math.PI / 360);
-  let x = (px / W - 0.5) * 2 * th, y = (0.5 - py / H) * 2 * th * H / W, z = -1;
-  const a = -tiltDeg * Math.PI / 180, c = Math.cos(a), s = Math.sin(a);       // positive tilt = camera looks further down
-  const y2 = y * c - z * s, z2 = y * s + z * c; y = y2; z = z2;
-  const tx = 2 * (q.y * z - q.z * y), ty = 2 * (q.z * x - q.x * z), tz = 2 * (q.x * y - q.y * x);   // v + w*t + cross(q, t)
-  return { x: x + q.w * tx + (q.y * tz - q.z * ty), y: y + q.w * ty + (q.z * tx - q.x * tz), z: z + q.w * tz + (q.x * ty - q.y * tx) };
-}
-function rayToFloor(o, d) {                                                   // o and d in play-area coordinates
-  if (d.y > -0.03) return null;                                               // looking at or above the horizon
-  const t = -o.y / d.y; if (t > 8) return null;
-  return { x: o.x + d.x * t, z: o.z + d.z * t, dist: t };
-}
-
-/* ---------- camera stream ---------- */
-const camMsgEl = document.getElementById('camMsg');
-function camSet(s) { CAM.status = s; if (camMsgEl) camMsgEl.textContent = s; }
-function stopCamera() {
-  if (CAM.stream) CAM.stream.getTracks().forEach(t => t.stop());
-  if (CAM.video && CAM.video.parentNode) CAM.video.parentNode.removeChild(CAM.video);
-  CAM.stream = null; CAM.video = null; CAM.ok = false;
-}
-async function startCamera() {
-  stopCamera(); CAM.err = ''; CAM.info = ''; CAM.lagMs = null; camSet('asking for the camera…');
-  try {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('getUserMedia is not available here (needs HTTPS in the Quest Browser)');
-    let stream;
-    try { stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 960 }, frameRate: { ideal: 30 } }, audio: false }); }
-    catch (e) { if (e && e.name === 'OverconstrainedError') stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false }); else throw e; }
-    const v = document.createElement('video');
-    v.muted = true; v.playsInline = true; v.setAttribute('playsinline', ''); v.srcObject = stream;
-    v.style.cssText = 'position:fixed;left:0;top:0;width:2px;height:2px;opacity:0.01;pointer-events:none';
-    document.body.appendChild(v);
-    await v.play();
-    CAM.stream = stream; CAM.video = v; CAM.ok = true; CAM.lastFrameAt = performance.now(); CAM.frames = 0;
-    const tr = stream.getVideoTracks()[0], st = tr && tr.getSettings ? tr.getSettings() : {};
-    CAM.info = (tr && tr.label ? tr.label + ' · ' : '') + (st.width || v.videoWidth || '?') + 'x' + (st.height || v.videoHeight || '?') + ' @' + (st.frameRate ? Math.round(st.frameRate) : '?');
-    try { const ds = await navigator.mediaDevices.enumerateDevices(); CAM.devices = ds.filter(d => d.kind === 'videoinput').length + ' camera(s) listed'; } catch (e) {}
-    CAM.hasRvfc = typeof v.requestVideoFrameCallback === 'function';
-    if (CAM.hasRvfc) {
-      const cb = (now, meta) => {
-        CAM.newFrame = true; CAM.lastFrameAt = performance.now(); CAM.frames++;
-        if (meta && typeof meta.captureTime === 'number') { const lag = now - meta.captureTime; if (lag >= 0 && lag < 2000) CAM.lagMs = CAM.lagMs == null ? lag : CAM.lagMs * 0.9 + lag * 0.1; }
-        if (CAM.video === v) v.requestVideoFrameCallback(cb);
-      };
-      v.requestVideoFrameCallback(cb);
-    }
-    camSet('camera running');
-  } catch (e) {
-    CAM.ok = false; CAM.err = (e && e.name ? e.name : 'Error') + (e && e.message ? ': ' + e.message : '');
-    camSet('camera failed: ' + CAM.err);
-  }
-}
-const camBtn = document.getElementById('camBtn');
-if (camBtn) camBtn.addEventListener('click', startCamera);
-
-function calibrateCam() {                                                     // learn the puck colour from the middle of the picture
-  if (!CAM.img) return false;
-  const W = CT.procW, H = CT.procH, d = CAM.img.data, r0 = 6;
-  let R = 0, G = 0, B = 0, n = 0;
-  for (let y = (H >> 1) - r0; y < (H >> 1) + r0; y++) for (let x = (W >> 1) - r0; x < (W >> 1) + r0; x++) { const i = (y * W + x) * 4; R += d[i]; G += d[i + 1]; B += d[i + 2]; n++; }
-  R /= n; G /= n; B /= n;
-  const [h, s, v] = rgbToHsv(R, G, B);
-  CAM.custom = v < 0.25 ? { mode: 'dark', vMax: Math.min(0.4, v * 1.6 + 0.05), css: '#888' }
-    : { mode: 'hue', h, hw: 16, sMin: Math.max(0.2, s * 0.6), vMin: Math.max(0.2, v * 0.55), css: 'rgb(' + (R | 0) + ',' + (G | 0) + ',' + (B | 0) + ')' };
-  globalThis.__camCustom = CAM.custom; state.camColor = 'custom'; saveSettings();
-  return true;
-}
-
-/* ---------- the floating monitor + floor markers + zones ---------- */
-const monCanvas = document.createElement('canvas'); monCanvas.width = 512; monCanvas.height = 384;
-const monCtx = monCanvas.getContext('2d');
-const monTex = new THREE.CanvasTexture(monCanvas); monTex.colorSpace = THREE.SRGBColorSpace;
-const monitor = new THREE.Mesh(new THREE.PlaneGeometry(0.64, 0.48), new THREE.MeshBasicMaterial({ map: monTex, transparent: true }));
-monitor.position.set(CT.monitorPos[0], CT.monitorPos[1], CT.monitorPos[2]);
-monitor.rotation.y = Math.atan2(-CT.monitorPos[0], -CT.monitorPos[2]);   // turned to face you
-monitor.visible = false; world.add(monitor);
-const ctZoneMat = new THREE.MeshBasicMaterial({ color: 0x4cc9f0, transparent: true, opacity: 0.45, depthWrite: false, side: THREE.DoubleSide });
-const ctZoneOn = new THREE.MeshBasicMaterial({ color: 0x3dff7a, transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide });
-const ctMarkMat = new THREE.MeshBasicMaterial({ color: 0xff3d3d, transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide });
-const ctGroup = new THREE.Group(); ctGroup.visible = false; world.add(ctGroup);
-const ctZones = CT.zones.map(([x, z]) => { const m = new THREE.Mesh(new THREE.RingGeometry(0.86, 1, 40), ctZoneMat); m.rotation.x = -Math.PI / 2; m.position.set(x, 0.006, z); ctGroup.add(m); return m; });
-const ctFill = new THREE.Mesh(new THREE.CircleGeometry(1, 40), new THREE.MeshBasicMaterial({ color: 0x3dff7a, transparent: true, opacity: 0.18, depthWrite: false })); ctFill.rotation.x = -Math.PI / 2; ctGroup.add(ctFill);
-const ctMark = new THREE.Mesh(new THREE.RingGeometry(0.05, 0.075, 24), ctMarkMat); ctMark.rotation.x = -Math.PI / 2; ctMark.visible = false; ctGroup.add(ctMark);
-const ctRadius = () => lerp(CT.zoneRadiusEasy, CT.zoneRadiusHard, (state.levelCT - 1) / 9);
-function ctPickZone() {
-  let k = CAM.zone; while (k === CAM.zone && ctZones.length > 1) k = Math.floor(Math.random() * ctZones.length);
-  CAM.zone = k; CAM.hold = 0;
-}
-function layoutZones() {
-  const r = ctRadius();
-  ctZones.forEach((z, i) => { z.scale.setScalar(r); z.material = i === CAM.zone ? ctZoneOn : ctZoneMat; });
-  ctFill.position.set(ctZones[CAM.zone].position.x, 0.005, ctZones[CAM.zone].position.z); ctFill.scale.setScalar(r * 0.86);
-}
-function resetCamTest() {
-  const on = state.game === 'camtest';
-  monitor.visible = on; ctGroup.visible = on;
-  CAM.hold = 0; CAM.zone = 0; CAM.seen.length = 0; CAM.lostFor = 9; CAM.floor = null; ctMark.visible = false;
-  if (on) { ctPickZone(); layoutZones(); }
-}
-const _cq = new THREE.Quaternion(), _cpos = new THREE.Vector3();
-function processCamFrame() {
-  const v = CAM.video; if (!v || v.readyState < 2 || !v.videoWidth) return;
-  const W = CT.procW, H = CT.procH;
-  if (!CAM.proc) { CAM.proc = document.createElement('canvas'); CAM.proc.width = W; CAM.proc.height = H; CAM.pctx = CAM.proc.getContext('2d', { willReadFrequently: true }); }
-  CAM.pctx.drawImage(v, 0, 0, W, H);
-  CAM.img = CAM.pctx.getImageData(0, 0, W, H);
-  const t0 = performance.now();
-  const d = detectBlob(CAM.img.data, W, H, camTarget());
-  CAM.procMs += (performance.now() - t0 - CAM.procMs) * 0.1;
-  CAM.fpsCount++;
-  CAM.seen.push(d.ok ? 1 : 0); if (CAM.seen.length > 90) CAM.seen.shift();
-  if (d.ok) {
-    const a = CAM.lostFor > 0.3 ? 1 : 0.55;                                  // smooth, but jump straight to it after losing it
-    CAM.det.x = CAM.det.ok && a < 1 ? CAM.det.x + (d.x - CAM.det.x) * a : d.x; CAM.det.y = CAM.det.ok && a < 1 ? CAM.det.y + (d.y - CAM.det.y) * a : d.y;
-    CAM.lostFor = 0;
-    if (renderer.xr.isPresenting) {                                          // where on the floor is that? (uses the headset's pose right now)
-      const xc = renderer.xr.getCamera(); xc.getWorldPosition(_cpos); xc.getWorldQuaternion(_cq);
-      const dir = pixelRay(CAM.det.x, CAM.det.y, W, H, state.camFov, state.camTilt, _cq);
-      const p0 = world.worldToLocal(_cpos.clone()), p1 = world.worldToLocal(new THREE.Vector3(_cpos.x + dir.x, _cpos.y + dir.y, _cpos.z + dir.z));
-      CAM.floor = rayToFloor(p0, { x: p1.x - p0.x, y: p1.y - p0.y, z: p1.z - p0.z });
-    } else CAM.floor = null;
-  }
-  CAM.det.ok = d.ok; CAM.det.n = d.n; CAM.det.total = d.total;
-}
-function drawMonitor() {
-  const c = monCtx, W = 512, H = 384;
-  c.fillStyle = 'rgba(8,14,28,0.92)'; c.fillRect(0, 0, W, H);
-  const px = 16, py = 44, pw = 288, ph = 216;
-  if (CAM.proc && CAM.ok) {
-    c.drawImage(CAM.proc, px, py, pw, ph);
-    c.strokeStyle = 'rgba(61,255,122,0.9)'; c.lineWidth = 2; c.strokeRect(px + pw / 2 - 26, py + ph / 2 - 20, 52, 40);   // calibration box
-    if (CAM.det.ok) {
-      const x = px + CAM.det.x / CT.procW * pw, y = py + CAM.det.y / CT.procH * ph;
-      c.strokeStyle = '#ff3d3d'; c.lineWidth = 3; c.beginPath(); c.arc(x, y, 14, 0, 6.283); c.moveTo(x - 22, y); c.lineTo(x + 22, y); c.moveTo(x, y - 22); c.lineTo(x, y + 22); c.stroke();
-    }
-  } else {
-    c.fillStyle = '#1a2740'; c.fillRect(px, py, pw, ph);
-    c.fillStyle = '#ffb703'; c.font = '700 22px system-ui'; c.textAlign = 'center';
-    c.fillText(CAM.err ? 'NO CAMERA PICTURE' : 'CAMERA NOT STARTED', px + pw / 2, py + ph / 2 - 8);
-    c.fillStyle = '#9fb3d1'; c.font = '500 16px system-ui';
-    c.fillText(CAM.err ? 'see the message on the right' : 'press ENABLE CAMERA on the menu', px + pw / 2, py + ph / 2 + 18);
-  }
-  c.textAlign = 'left'; c.fillStyle = '#ffffff'; c.font = '700 22px system-ui'; c.fillText('CAMERA TEST', 16, 30);
-  const seen = CAM.seen.length ? Math.round(100 * CAM.seen.reduce((a, b) => a + b, 0) / CAM.seen.length) : 0;
-  const lines = [
-    ['status', CAM.status], ['picture', CAM.info || '-'], ['frames/s', CAM.ok ? CAM.fps + (CAM.fps < 20 ? '  (low)' : '') : '-'],
-    ['scan time', CAM.ok ? CAM.procMs.toFixed(1) + ' ms' : '-'], ['delay', CAM.lagMs == null ? 'not reported' : Math.round(CAM.lagMs) + ' ms'],
-    ['puck seen', CAM.ok ? seen + '% of frames' : '-'], ['blob', CAM.ok ? CAM.det.n + ' px (' + CAM.det.total + ' total)' : '-'],
-    ['on floor', CAM.floor ? 'x ' + CAM.floor.x.toFixed(2) + '  z ' + CAM.floor.z.toFixed(2) + ' m' : '-']
-  ];
-  c.font = '600 15px system-ui';
-  lines.forEach(([k, v], i) => { c.fillStyle = '#7f93b3'; c.fillText(k, 318, 62 + i * 26); c.fillStyle = '#ffffff'; c.fillText(String(v).slice(0, 22), 318, 62 + i * 26 + 14); });
-  c.fillStyle = camTarget().css || '#fff'; c.fillRect(16, 270, 40, 24);
-  c.fillStyle = '#9fb3d1'; c.font = '600 15px system-ui'; c.fillText('looking for ' + state.camColor + (state.camColor === 'custom' ? '' : ' - ' + 'FOV ' + state.camFov + '° tilt ' + state.camTilt + '°'), 66, 288);
-  c.fillStyle = '#ffd166'; c.font = '600 15px system-ui';
-  const hint = CAM.err ? CAM.err : (!CAM.ok ? '' : (performance.now() - CAM.lastFrameAt > 1500 ? 'Camera frozen. Press RESTART CAMERA.' : seen < 40 ? 'Puck rarely seen: try a brighter colour or press CALIBRATE.' : 'Move the puck: does the red ring follow it?'));
-  c.fillText(hint.slice(0, 64), 16, 330); c.fillText(hint.slice(64, 128), 16, 352);
-  monTex.needsUpdate = true;
-}
-function updateCamTest(dt, running) {
-  const now = performance.now();
-  if (CAM.ok) {
-    if (CAM.hasRvfc ? CAM.newFrame : now - CAM.procT > 33) { CAM.newFrame = false; CAM.procT = now; processCamFrame(); }
-    CAM.lostFor += dt;
-    if (CAM.lostFor > 0.5) { CAM.det.ok = false; CAM.floor = null; }
-    if (now - CAM.fpsT >= 1000) { CAM.fps = CAM.fpsCount; CAM.fpsCount = 0; CAM.fpsT = now; }
-  }
-  if (CAM.floor && CAM.det.ok) { ctMark.visible = true; ctMark.position.set(CAM.floor.x, 0.012, CAM.floor.z); } else ctMark.visible = false;
-  if (running) {
-    const z = ctZones[CAM.zone].position, r = ctRadius();
-    const inside = CAM.floor && CAM.det.ok && Math.hypot(CAM.floor.x - z.x, CAM.floor.z - z.z) < r;
-    CAM.hold = inside ? CAM.hold + dt : Math.max(0, CAM.hold - dt * 2);
-    ctFill.material.opacity = 0.18 + 0.5 * Math.min(1, CAM.hold / CT.holdTime);
-    if (CAM.hold >= CT.holdTime) { state.passed++; sfx('star', 0); ctPickZone(); layoutZones(); }
-  }
-  if (now - CAM.monT > 100) { CAM.monT = now; drawMonitor(); }
-}
-resetCamTest();
-if (globalThis.__camCustom && !CAM.custom) CAM.custom = globalThis.__camCustom;
-
 /* ============================== UI PANEL ============================== */
 const CW = 1024, CH = 786;                       // the layout is designed on this grid (704 tall for most games; Dog Attack needs the extra rows)
-const tallGame = () => state.game === 'dogattack' || state.game === 'camtest';
-const panelH = () => (tallGame() ? 786 : 704);
+const panelH = () => (state.game === 'dogattack' ? 786 : 704);
 const UI_SCALE = CONFIG.panelScale;              // the panel is drawn this much bigger, but the text stays the same size in the world
 const canvas = document.createElement('canvas'); canvas.width = Math.round(CW * UI_SCALE); canvas.height = Math.round(CH * UI_SCALE);
 const ctx = canvas.getContext('2d');
@@ -2787,10 +2579,9 @@ const areaGame = () => state.game === 'lava' || state.game === 'dogattack';
 const dogOnly = () => state.game === 'dogattack';
 const goOnly = () => state.game === 'goaway';
 const sticksOnly = () => state.game === 'sticks';
-const camOnly = () => state.game === 'camtest';
 const stormOnly = () => state.game === 'storm';
-const diffY = () => (tallGame() ? 536 : 454);     // the difficulty row and the bottom row move down in Dog Attack
-const botY = () => (tallGame() ? 622 : 540);
+const diffY = () => (state.game === 'dogattack' ? 536 : 454);     // the difficulty row and the bottom row move down in Dog Attack
+const botY = () => (state.game === 'dogattack' ? 622 : 540);
 const hasDifficulty = () => state.game === 'treadmill' || state.game === 'keepaway' || state.game === 'lava';
 const buttons = [
   { id: 'gameprev', x: 40,  y: 62,  w: 120, h: 62, label: '◀' },
@@ -2812,14 +2603,6 @@ const buttons = [
   { id: 'animnext',    x: 904, y: 454, w: 80, h: 66, label: '▶', show: dogOnly },
   ...['standard', 'flipped', 'inverted'].map((m, i) => ({ id: 'orient' + m, x: 215 + i * 262, y: 372, w: 247, h: 66,
       label: m.toUpperCase(), sel: () => state.stickMode === m, show: sticksOnly })),
-  ...['orange', 'green', 'pink', 'blue'].map((c, i) => ({ id: 'camcolor' + c, x: 215 + i * 194, y: 372, w: 184, h: 66,
-      label: c.toUpperCase(), sel: () => state.camColor === c, show: camOnly })),
-  { id: 'camstart', x: 215, y: 454, w: 374, h: 66, label: () => (CAM.ok ? 'RESTART CAMERA' : 'ENABLE CAMERA'), show: camOnly },
-  { id: 'camcal',   x: 610, y: 454, w: 374, h: 66, label: 'CALIBRATE ON CENTRE', sel: () => state.camColor === 'custom', show: camOnly },
-  { id: 'camfovdown',  x: 40,  y: 536, w: 80, h: 66, label: '−', show: camOnly },
-  { id: 'camfovup',    x: 420, y: 536, w: 80, h: 66, label: '+', show: camOnly },
-  { id: 'camtiltdown', x: 524, y: 536, w: 80, h: 66, label: '−', show: camOnly },
-  { id: 'camtiltup',   x: 904, y: 536, w: 80, h: 66, label: '+', show: camOnly },
   { id: 'shooterdown', x: 215, y: 372, w: 120, h: 66, label: '−', show: goOnly },
   { id: 'shooterup',   x: 864, y: 372, w: 120, h: 66, label: '+', show: goOnly },
   { id: 'stormdensdown', x: 215, y: 372, w: 120, h: 66, label: '−', show: stormOnly },
@@ -2853,7 +2636,7 @@ const fmtTime = t => {
 let lastTimerText = '';
 function drawPanel() {
   ctx.setTransform(UI_SCALE, 0, 0, UI_SCALE, 0, 0);
-  const ct = state.game === 'camtest', sk = state.game === 'sticks', go = state.game === 'goaway', st = state.game === 'storm', ka = state.game === 'keepaway', ins = state.game === 'insanity', hu = state.game === 'headsup', lv = state.game === 'lava', da = state.game === 'dogattack';
+  const sk = state.game === 'sticks', go = state.game === 'goaway', st = state.game === 'storm', ka = state.game === 'keepaway', ins = state.game === 'insanity', hu = state.game === 'headsup', lv = state.game === 'lava', da = state.game === 'dogattack';
   const grp = (gx, y, title, sub) => {                         // the box between a pair of − / + (or ◀ ▶) buttons
     ctx.fillStyle = '#1a2740'; rr(gx + 88, y, 284, 66, 20); ctx.fill();
     ctx.textAlign = 'center'; ctx.fillStyle = '#ffffff'; ctx.font = '700 26px system-ui, sans-serif';
@@ -2900,12 +2683,11 @@ function drawPanel() {
     : hu ? 'Dodged ' + state.dodged + '  ·  Hit ' + state.hits
     : lv ? 'Distance ' + Math.floor(state.distance) + ' m'
     : da ? ANIMALS[state.animal].plural.replace(/^./, c => c.toUpperCase()) + ' ' + daDogCount()
-    : ct ? 'Rings ' + state.passed + '  ·  Seen ' + (CAM.seen.length ? Math.round(100 * CAM.seen.reduce((a, b) => a + b, 0) / CAM.seen.length) : 0) + '%'
     : sk ? 'Sticks ' + SK.rows
     : go ? 'Dodged ' + state.dodged + '  ·  Hit ' + state.hits
     : st ? 'Stars ' + state.stars + (PK.slowT > 0 ? '  ·  SLOW ' + Math.ceil(PK.slowT) + 's' : '')
     : 'Passed ' + state.passed;
-  ctx.fillText('Level ' + curLevel() + '  ·  ' + (ct ? 'ring ' + Math.round(ctRadius() * 200) + ' cm' : shownSpeed().toFixed(1) + ' m/s') + '  ·  ' + extra, CW / 2, 236);
+  ctx.fillText('Level ' + curLevel() + '  ·  ' + shownSpeed().toFixed(1) + ' m/s' + '  ·  ' + extra, CW / 2, 236);
 
   ctx.fillStyle = '#5f7391'; ctx.font = '500 20px system-ui, sans-serif';
   ctx.fillText('build ' + BUILD, CW / 2, PH - 28);
@@ -2940,13 +2722,6 @@ function drawPanel() {
     areaRows(ft(2 * DA.halfWidth * k) + ' × ' + ft(DA.depth * k) + ' ft  ·  ' + ft(DA.startDist * k) + ' ft out');
     grp(40, 454, 'DENSITY  ' + state.densityDA + ' / 10', daDogCount() + ' ' + ANIMALS[state.animal].plural);
     grp(524, 454, ANIMALS[state.animal].name, 'ANIMAL  ' + (ANIMAL_IDS.indexOf(state.animal) + 1) + ' / ' + ANIMAL_IDS.length);
-  } else if (ct) {
-    ctx.font = '700 25px system-ui, sans-serif';
-    ctx.fillText('COLOUR', 40, 405);
-    ctx.fillText('CAMERA', 40, 487);
-    ctx.fillText('ALIGN', 40, 569);
-    grp(40, 536, 'FOV  ' + state.camFov + '°', 'camera field of view');
-    grp(524, 536, 'TILT  ' + state.camTilt + '°', 'tilt the camera down (+)');
   } else if (sk) {
     ctx.font = '700 25px system-ui, sans-serif';
     ctx.fillText('BLADES', 40, 405);
@@ -2968,7 +2743,7 @@ function drawPanel() {
     if (go) {
       ctx.fillStyle = '#1a2740'; rr(215, 454, 769, 66, 20); ctx.fill();
       ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.font = '700 26px system-ui, sans-serif';
-      ctx.fillText('PUCKS COME AT FEET TO HEAD  ·  GET OUT OF THE WAY', 215 + 769 / 2, 489);
+      ctx.fillText('PUCKS COME AT FEET TO HEAD  ·  DUCK OR DODGE', 215 + 769 / 2, 489);
     } else {
       ctx.fillStyle = '#1a2740'; rr(347, 454, 505, 66, 20); ctx.fill();
       ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.font = '700 28px system-ui, sans-serif';
@@ -3030,7 +2805,7 @@ function drawPanel() {
     rr(b.x, b.y, b.w, b.h, 20); ctx.fill();
     if (sel && !hov) { ctx.strokeStyle = '#4cc9f0'; ctx.lineWidth = 4; rr(b.x, b.y, b.w, b.h, 20); ctx.stroke(); }
     ctx.fillStyle = hov ? '#0b1220' : '#ffffff';
-    const fs = b.id === 'toggle' ? 62 : (b.id.startsWith('game') || b.id.startsWith('shift') || b.id.startsWith('anim')) ? 34 : (b.id.startsWith('dens') || b.id.startsWith('dogdens') || b.id.startsWith('shots') || b.id.startsWith('shooter') || b.id.startsWith('camfov') || b.id.startsWith('camtilt') || b.id.startsWith('stormdens') || b.id.startsWith('stormw') || b.id.startsWith('area')) ? 44
+    const fs = b.id === 'toggle' ? 62 : (b.id.startsWith('game') || b.id.startsWith('shift') || b.id.startsWith('anim')) ? 34 : (b.id.startsWith('dens') || b.id.startsWith('dogdens') || b.id.startsWith('shots') || b.id.startsWith('shooter') || b.id.startsWith('stormdens') || b.id.startsWith('stormw') || b.id.startsWith('area')) ? 44
       : label.length > 9 ? 26 : b.h <= 70 ? 30 : 32;
     ctx.font = (b.id === 'toggle' ? '800 ' : '700 ') + fs + 'px system-ui, sans-serif';
     ctx.fillText(label, b.x + b.w / 2, b.y + b.h / 2 + 2);
@@ -3051,7 +2826,6 @@ function resetRun() {
   resetDogAttack();
   resetPuckModes();
   resetSticks();
-  resetCamTest();
   lastTimerText = '';
 }
 
@@ -3075,8 +2849,6 @@ function pressButton(id) {
       clearObstacles(); state.spawnTimer = 0; state.nextInterval = 0.5;
       saveSettings();
     }
-  } else if (id.startsWith('camcolor')) {
-    state.camColor = id.slice(8); saveSettings();
   } else if (id.startsWith('diff')) {
     const d = id.slice(4);
     if (d !== state.difficulty) {
@@ -3100,7 +2872,6 @@ function pressButton(id) {
         else if (state.game === 'headsup') state.levelHU = clamp(state.levelHU + delta, CONFIG.minLevel, CONFIG.maxLevel);
         else if (state.game === 'lava') state.levelLV = clamp(state.levelLV + delta, CONFIG.minLevel, CONFIG.maxLevel);
         else if (state.game === 'dogattack') state.levelDA = clamp(state.levelDA + delta, CONFIG.minLevel, CONFIG.maxLevel);
-        else if (state.game === 'camtest') { state.levelCT = clamp(state.levelCT + delta, CONFIG.minLevel, CONFIG.maxLevel); layoutZones(); }
         else if (state.game === 'sticks') state.levelSS = clamp(state.levelSS + delta, CONFIG.minLevel, CONFIG.maxLevel);
         else if (state.game === 'goaway') state.levelGO = clamp(state.levelGO + delta, CONFIG.minLevel, CONFIG.maxLevel);
         else if (state.game === 'storm') state.levelST = clamp(state.levelST + delta, CONFIG.minLevel, CONFIG.maxLevel);
@@ -3153,12 +2924,6 @@ function pressButton(id) {
         resetDogAttack(); saveSettings();
         break;
       }
-      case 'camstart': startCamera(); break;
-      case 'camcal': if (!calibrateCam()) camSet('no picture yet: press ENABLE CAMERA first'); break;
-      case 'camfovdown': case 'camfovup':
-        state.camFov = clamp(state.camFov + (id === 'camfovup' ? 4 : -4), 50, 110); saveSettings(); break;
-      case 'camtiltdown': case 'camtiltup':
-        state.camTilt = clamp(state.camTilt + (id === 'camtiltup' ? 2 : -2), -25, 25); saveSettings(); break;
       case 'orientstandard':
       case 'orientflipped':
       case 'orientinverted':
@@ -3329,14 +3094,12 @@ renderer.setAnimationLoop(() => {
     else if (state.game === 'goaway') updateGoAway(dt);
     else if (state.game === 'storm') updateStorm(dt);
     else if (state.game === 'sticks') updateSticks(dt);
-    else if (state.game === 'camtest') updateCamTest(dt, true);
     else updateInsanity(dt);
 
     const t = fmtTime(state.elapsed) + '|' + state.passed + '|' + state.attacks + '|' + state.hits + '|' + state.dodged + '|' + state.stars + '|' + (PK.slowT > 0 ? Math.ceil(PK.slowT) : 0) + '|' + Math.floor(state.distance);
     if (t !== lastTimerText) { lastTimerText = t; drawPanel(); }
   } else if (state.mode === 'idle' && state.game === 'dogattack') updateDogAttack(dt, false);   // dogs stand and wag until you start
   else if (state.mode === 'idle' && state.game === 'goaway') idleGoAway(dt);
-  else if (state.game === 'camtest') updateCamTest(dt, false);   // keep the camera preview alive while paused or idle
   else if (state.mode === 'idle' && state.game === 'headsup') idleHeadsUp(dt);   // dog wags its tail while you pick settings
   else if (state.game === 'lava') idleLava(dt);   // lava shimmers
   updateTint(dt);
