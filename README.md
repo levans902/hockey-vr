@@ -38,7 +38,9 @@ Medium, Hard and Pro always keep a path open, so every layout can be stickhandle
 
 ### Keep Away
 
-Opposing defencemen skate around you in the zone in front of and beside you, never behind. They always face you and skate forwards, backwards and sideways. At random times they set up, lunge at where your puck is, swing their stick, then back off and reset.
+Opposing defencemen skate around a red **attack circle** on the floor, in front of and beside you, never behind you. Put your real puck in the circle. They always face the circle and skate forwards, backwards and sideways. At random times they set up, lunge at the circle, swing their stick, then back off and reset. Move and deke around their sticks to keep the puck away.
+
+The circle starts 3 ft in front of you. The **CIRCLE − / +** buttons move it closer or farther (1 to 8 ft, in 6 inch steps) and the **SHIFT ◀ / ▶** buttons slide it left or right (up to 4 ft). Both are saved. Tunables: `keepAway.circleDist`, `circleRadius`, `distMin`, `distMax`, `shiftMax`.
 
 | Difficulty | Defenders | Extras |
 | --- | --- | --- |
@@ -169,7 +171,8 @@ A floating panel sits about 1 m in front of you near eye level. Aim a controller
 | **EASY / MEDIUM / HARD / PRO** | Treadmill, Keep Away and The Floor Is Lava: layout, defender count or how twisty the path is. |
 | **DENSITY − / +** | Insanity only: clutter level, 1 to 10. |
 | **PLAYSPACE − / +** | Dog Attack and The Floor Is Lava: scales the play area. |
-| **SHIFT ◀ / ▶** | Dog Attack and The Floor Is Lava: slides the play area left or right. |
+| **SHIFT ◀ / ▶** | Dog Attack and The Floor Is Lava: slides the play area left or right. Keep Away: slides the attack circle left or right. |
+| **CIRCLE − / +** | Keep Away only: moves the attack circle closer to or farther from you. |
 | **DENSITY − / +** (Dog Attack) | How many animals, 1 to 10. |
 | **ANIMAL ◀ / ▶** | Dog Attack: dog, shark or T-rex. |
 | **SHOTS − / +** | Heads Up! only: cannon shot volume, 1 to 10. |
