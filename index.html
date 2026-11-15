@@ -38,7 +38,7 @@
 <script type="module">
 import * as THREE from 'three';
 
-const BUILD = 'tweaks-4';   // shown on the start screen and panel so you can tell which copy is loaded
+const BUILD = 'tweaks-5';   // shown on the start screen and panel so you can tell which copy is loaded
 document.getElementById('build').textContent = 'build ' + BUILD;
 
 /* ============================== CONFIG ============================== */
@@ -78,7 +78,7 @@ const CONFIG = {
     pathSlope: 0.9,            // steepest sideways slope of the guaranteed open route (sideways m per forward m), at slow speeds
     pathSlopeMin: 0.4,         // ... and the gentlest it is allowed to become at high speeds
     pathLatMax: 2.0,           // most sideways speed (m/s) the route asks of you: the slope shrinks as speed grows
-    zamEvery: 25, zamFirst: 14,   // Zamboni: about one every this many metres of travel (a Zamboni takes half the lane, so the route holds to the other half beside it), and the first one
+    zamEvery: 250, zamFirst: 60,   // Zamboni: about one every this many metres of travel (a Zamboni takes half the lane, so the route holds to the other half beside it), and the first one
     pathEdge: 0.2,             // the route swings out to within this distance of the lane edges
     pathMinHalf: 0.14,         // half-width (m) of the guaranteed open path through the clutter
     openMaxLow: 4.0, openMaxHigh: 1.5,   // no puck-wide strip of the lane may stay clear of objects longer than this (m), at density 1 / 10
@@ -1167,6 +1167,7 @@ function resetInsanity() {
   IN.items = []; IN.travel = 0; IN.nextChunk = 0; IN.cover = {}; IN.zamNext = IC.zamFirst; IN.zamPending = false; IN.zamSlots = [];
   IN.path = [{ s: 0, x: (Math.random() * 2 - 1) * 0.4 }]; IN.pathTarget = null;
 }
+resetInsanity();                                          // so a fresh load straight into Insanity has a route to follow
 function extendPath(sEnd) {
   /* The open route zig-zags: it picks a new target near one side of the lane, heads there, then swings to the other
      side (usually), so it keeps crossing the middle instead of settling there. How fast it can swing sideways
