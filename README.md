@@ -57,6 +57,8 @@ Opposing defencemen skate around you in the zone in front of and beside you, nev
 
 The guaranteed route through the clutter zig-zags across the lane and is kept narrow, and a guard watches every 0.35 m strip of the lane, adding a filler object whenever a strip has been empty too long. At the default density the longest empty stretch is about 3 to 8 m, instead of 40 to 50 m before, so there is no hiding in the middle.
 
+The **Zamboni** takes half the lane. It is placed on purpose: every 250 m or so of travel (about every 1 to 3 minutes, depending on speed) the open route swings out to one side and holds there, and a Zamboni goes in on the other half. That means it shows up at any density. It used to be picked at random like the other objects, but the winding route blocked almost every random spot, so it had practically stopped appearing. Tune with `insanity.zamEvery` (metres between Zambonis) and `zamFirst`.
+
 One lane, as wide as three treadmill lanes (1.65 m), packed with objects of every size. Instead of switching lanes, you have to work through the clutter with toe drags and fancy handles.
 
 - **Big and odd shapes:** Insanity uses the treadmill objects except the dynamite, and adds hockey sticks lying flat at all sorts of angles (mostly diagonal or across the lane), a goalie stick, a crossed pair of sticks, two kinds of hockey bag, a goalie pad, a bucket of pucks, a helmet, a wide goal net, a low team bench and an ice resurfacer that fills one whole half of the lane. A puck can't slide over a flat stick, so these force wider moves, lifts and toe drags instead of just dangling around thin objects. Every object has a footprint (a line plus a radius) that the generator keeps the gap around, so long objects block whole strips of the lane and the gaps vary a lot in size and shape.
@@ -283,3 +285,56 @@ Everything adjustable is in the `CONFIG` object near the top of the script in `i
 ## License
 
 Add your license of choice here.
+
+## Asset reference (for graphics updates)
+
+To change an asset, refer to it by name and function below. Each function builds one model in `index.html`.
+
+### Floor objects (Treadmill, Insanity, Floor Is Lava, Keep Away)
+
+| Asset | Function | Used in |
+|---|---|---|
+| Water bottle | `makeWaterBottle` | Treadmill, Insanity |
+| Pylon | `makePylon` | Treadmill, Insanity |
+| Dynamite (TNT) | `makeDynamite` | Treadmill only (removed from Insanity) |
+| Skates (pair) | `makeSkates` (built from `buildSkate`) | Treadmill, Insanity |
+| Gloves (pair) | `makeGloves` (built from `buildGlove`) | Treadmill, Insanity |
+| Mini net | `makeMiniNet` | Treadmill, Insanity |
+| Wide net | `makeWideNet` (built from `buildNet`) | Insanity |
+| Flat stick (1.5 m and 1.0 m, three colour combos) | `makeStick` | Insanity |
+| Goalie stick | `makeGoalieStick` | Insanity |
+| Crossed sticks | `makeCrossedSticks` | Insanity |
+| Hockey bag (red and navy) | `makeBag` | Insanity |
+| Goalie leg pad | `makeGoaliePad` | Insanity |
+| Team bench | `makeBench` | Insanity |
+| Bucket of pucks | `makeBucket` | Insanity |
+| Helmet | `makeHelmet` | Insanity |
+| Zamboni | `makeZamboni` | Insanity |
+| Defender (skater) | `makeDefenderModel` | Keep Away |
+
+### Game-mode assets
+
+| Asset | Function | Used in |
+|---|---|---|
+| Landing pod | `makePodTemplate` | Heads Up! |
+| Dog (French bulldog) | `makeDogModel` | Heads Up! cannon, Dog Attack |
+| Shark | `makeShark` | Dog Attack ("SHARK" option) |
+| T-rex | `makeTrex` | Dog Attack ("T-REX" option) |
+| Animal poses and animation | `poseDog`, `poseShark`, `poseTrex` | Dog Attack |
+| Hockey player shooter | `makeShooter` (pose in `posePlayer`) | Duck! |
+| Puck | `puckGeo` + `pkMat.puck` | Duck!, Puck Storm |
+| Power-up star | `makeStar` | Puck Storm, Duck! |
+| Traffic stick | `makeTrafficStick` | Stick Traffic |
+
+### Surfaces and textures
+
+| Asset | Function | Used in |
+|---|---|---|
+| Lava floor | `makeLavaTexture` | Floor Is Lava |
+| Slate path | `makePathTexture` | Floor Is Lava |
+
+### Colors and materials
+
+Most colors live in material tables near the top of the file: `im.*` (Insanity items, e.g. `im.bagRed`, `im.stickA`), `hm.*` (Heads Up! items), `pkMat.*` (pucks and stars) and `HOCKEY` (the Duck! players' gear).
+
+Not listed because they are not 3D assets: the control panel and buttons, the floor guide lines, and the sparkle effects.
