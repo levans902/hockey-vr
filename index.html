@@ -38,7 +38,7 @@
 <script type="module">
 import * as THREE from 'three';
 
-const BUILD = 'tweaks-10';   // shown on the start screen and panel so you can tell which copy is loaded
+const BUILD = 'tweaks-12';   // shown on the start screen and panel so you can tell which copy is loaded
 document.getElementById('build').textContent = 'build ' + BUILD;
 
 /* ============================== CONFIG ============================== */
@@ -53,6 +53,15 @@ const CONFIG = {
   startDifficulty: 'easy',
   baseSpeed: 0.7,              // m/s at level 0
   speedStep: 0.3,              // extra m/s per level
+  speedScale: {                // per-mode speed multiplier on top of each mode's own speed settings (1 = the original speeds)
+    keepaway: 0.7,             // -30%  (both the skating speed and the lunge speed)
+    insanity: 0.5,             // -50%
+    headsup: 0.5,              // -50%  (the floor pieces; the cannonballs are unchanged)
+    lava: 0.7,                 // -30%
+    dogattack: 0.75,           // -25%  (dogs, sharks and t-rexes)
+    goaway: 0.5,               // -50%  (Duck!: the pucks)
+    storm: 0.6                 // -40%
+  },
   minLevel: 1,
   maxLevel: 10,
   startLevel: 2,
@@ -131,9 +140,8 @@ const CONFIG = {
   headsUp: {
     laneWidth: 1.5,            // metres: floor guide for the training aid
     aidLength: 0.7,            // each floor piece is two pods joined by a rod this far apart (m)
-    aidRowMin: 1.0, aidRowMax: 1.5,   // metres between one row of pieces and the next along the lane (random in between)
-    aidTwoChance: 0.5,         // chance a row has two pieces side by side instead of one
-    aidSideX: 0.55, aidJitter: 0.05,  // where the two pieces sit sideways, and the random wobble (m)
+    aidRowMin: 1.3, aidRowMax: 1.9,   // metres between one piece and the next along the lane (random in between). Always more than a piece's length (0.7 m + pod width), so only one piece is ever crossing your line at a time
+    aidSideX: 0.55,            // each piece sits at a random spot up to this far left or right of the middle (m)
     aidMinZ: 0.8,              // nearest pod laid out when the mode loads (metres in front of you)
     aidSpawnOffset: 0.7,       // pods appear this many metres in front of the dog
     podRadius: 0.095, podHeight: 0.13, rodRadius: 0.014, rodHeight: 0.095,
@@ -219,7 +227,7 @@ const CONFIG = {
     reach: 0.7,                // attackers close to this distance from the puck, then poke
     minBodyDistance: 0.75,     // defenders never come closer than this to your body
     maxRadius: 3.2,            // edge of the keep-away zone (matches the treadmill's 4 m depth)
-    windup: 0.35, poke: 0.3, retreatMax: 1.6, attackTimeout: 1.8,
+    windup: 0.35, poke: 0.3, retreatMax: 2.3, attackTimeout: 2.6,   // (timeouts stretched by 1/0.7 to match the slower skating and lunge speed)
     attackGap: 1.0,            // minimum seconds between the start of any two attacks
     waitMin: 3.2, waitMax: 6.0,                  // seconds between one defender's attacks (level 0, 1 defender)
     waitMinPerLevel: 0.18, waitMaxPerLevel: 0.35,// shortened per speed level
@@ -296,6 +304,7 @@ function resetPro() {
   state.safeLane = Math.floor(state.lanes / 2);
 }
 const speedFor = lvl => CONFIG.baseSpeed + lvl * CONFIG.speedStep;
+const SS = CONFIG.speedScale;
 const intervalFor = lvl => Math.max(CONFIG.spawnIntervalMin,
   CONFIG.spawnIntervalBase - lvl * CONFIG.spawnIntervalPerLevel);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -303,8 +312,8 @@ const randInt = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
 const laneX = i => (i - (state.lanes - 1) / 2) * CONFIG.laneSpacing;
 const KC = CONFIG.keepAway;
 const kaDiff = () => KC.perDifficulty[state.difficulty];
-const orbitSpeedFor = l => KC.orbitSpeedBase + l * KC.orbitSpeedStep;
-const attackSpeedFor = l => KC.attackSpeedBase + l * KC.attackSpeedStep;
+const orbitSpeedFor = l => (KC.orbitSpeedBase + l * KC.orbitSpeedStep) * SS.keepaway;
+const attackSpeedFor = l => (KC.attackSpeedBase + l * KC.attackSpeedStep) * SS.keepaway;
 const GAMES = [
   { id: 'treadmill', name: 'ENDLESS OBJECT TREADMILL' },
   { id: 'keepaway',  name: 'KEEP AWAY' },
@@ -329,7 +338,10 @@ const shownSpeed = () => (state.game === 'keepaway' ? attackSpeedFor(state.level
   : state.game === 'storm' ? stSpeed()
   : state.game === 'sticks' ? skSpeed(state.levelSS)
   : state.game === 'toedrag' ? tdSpeed(state.levelTD)
-  : speedFor(state.game === 'insanity' ? state.levelIN : state.game === 'headsup' ? state.levelHU : state.game === 'lava' ? state.levelLV : state.level));
+  : state.game === 'insanity' ? speedFor(state.levelIN) * SS.insanity
+  : state.game === 'headsup' ? speedFor(state.levelHU) * SS.headsup
+  : state.game === 'lava' ? speedFor(state.levelLV) * SS.lava
+  : speedFor(state.level));
 
 /* ---------- remember settings between sessions ---------- */
 const SAVE_KEY = 'stickMR.v2';
@@ -1228,7 +1240,7 @@ function extendPath(sEnd) {
      side (usually), so it keeps crossing the middle instead of settling there. How fast it can swing sideways
      is limited by pathLatMax so it stays doable at higher speeds. */
   const half = IC.laneWidth / 2 - IC.pathEdge;
-  const slope = clamp(IC.pathLatMax / speedFor(state.levelIN), IC.pathSlopeMin, IC.pathSlope);
+  const slope = clamp(IC.pathLatMax / (speedFor(state.levelIN) * SS.insanity), IC.pathSlopeMin, IC.pathSlope);
   while (IN.path[IN.path.length - 1].s < sEnd) {
     const last = IN.path[IN.path.length - 1];
     if (IN.pathTarget === null || Math.abs(last.x - IN.pathTarget) < 0.04) {
@@ -1352,7 +1364,7 @@ function generateInsanityChunk(g) {
   }
 }
 function updateInsanity(dt) {
-  const speed = speedFor(state.levelIN);
+  const speed = speedFor(state.levelIN) * SS.insanity;
   IN.travel += speed * dt;
   while (IN.travel >= IN.nextChunk) {
     generateInsanityChunk(IN.nextChunk);
@@ -1403,7 +1415,8 @@ const podTemplate = makePodTemplate();
 const rodGeo = new THREE.CylinderGeometry(HC.rodRadius, HC.rodRadius, 1, 8);
 
 /* A floor piece: two pods joined by a rod, like one link of the old zig-zag aid but on its own. Pieces come toward
-   you in rows (one, or two side by side) at random angles so you have to dangle around and between them. */
+   you one at a time, at random angles and spots, so you dangle around each one in turn. They are spaced so only one
+   is ever crossing your line at once. */
 function makeAidPiece() {
   const g = new THREE.Group(), L = HC.aidLength;
   [-1, 1].forEach(sg => { const p = podTemplate.clone(); p.position.x = sg * L / 2; p.rotation.y = Math.random() * Math.PI * 2; g.add(p); });
@@ -1412,16 +1425,13 @@ function makeAidPiece() {
 }
 const aidPiece = makeAidPiece();
 const aidGap = () => HC.aidRowMin + Math.random() * (HC.aidRowMax - HC.aidRowMin);
-function spawnAidRow(z, instant) {
-  const xs = Math.random() < HC.aidTwoChance ? [-HC.aidSideX, HC.aidSideX] : [(Math.random() * 2 - 1) * HC.aidSideX];
-  xs.forEach(x => {
-    const p = aidPiece.clone();
-    p.userData.age = instant ? 1 : 0;
-    p.rotation.y = Math.random() * Math.PI;                                      // any angle
-    p.position.set(x + (Math.random() * 2 - 1) * HC.aidJitter, 0, z + (Math.random() * 2 - 1) * 0.1);
-    p.scale.setScalar(instant ? 1 : 0.01);
-    world.add(p); HU.pods.push(p);
-  });
+function spawnAidPiece(z, instant) {
+  const p = aidPiece.clone();
+  p.userData.age = instant ? 1 : 0;
+  p.rotation.y = Math.random() * Math.PI;                                        // any angle
+  p.position.set((Math.random() * 2 - 1) * HC.aidSideX, 0, z);
+  p.scale.setScalar(instant ? 1 : 0.01);
+  world.add(p); HU.pods.push(p);
   HU.farZ = z; HU.gap = aidGap();
 }
 function layoutAid() { HU.pods.forEach(p => p.scale.setScalar(Math.min(1, 0.01 + p.userData.age / 0.35))); }
@@ -1429,14 +1439,14 @@ function clearAid() { HU.pods.forEach(p => world.remove(p)); HU.pods.length = 0;
 function resetAid() {                          // start with pieces already laid out in front of you
   clearAid();
   let z = -HC.aidMinZ - 0.4;
-  while (z >= -HU.spawnZ) { spawnAidRow(z, true); z -= HU.gap; }
+  while (z >= -HU.spawnZ) { spawnAidPiece(z, true); z -= HU.gap; }
   layoutAid();
 }
 function updateAid(dt, speed) {
   HU.pods.forEach(p => { p.position.z += speed * dt; p.userData.age += dt; });
   HU.farZ += speed * dt;
   for (let i = HU.pods.length - 1; i >= 0; i--) if (HU.pods[i].position.z > CONFIG.despawnZ) { world.remove(HU.pods[i]); HU.pods.splice(i, 1); }
-  while (HU.farZ - HU.gap >= -HU.spawnZ) spawnAidRow(HU.farZ - HU.gap, false);
+  while (HU.farZ - HU.gap >= -HU.spawnZ) spawnAidPiece(HU.farZ - HU.gap, false);
   layoutAid();
 }
 
@@ -1776,7 +1786,7 @@ function updateDog(dt, pl, active) {
 
 function updateHeadsUp(dt) {
   const pl = playerLocal();
-  updateAid(dt, speedFor(state.levelHU));
+  updateAid(dt, speedFor(state.levelHU) * SS.headsup);
   updateDog(dt, pl, true);
   updateBalls(dt, pl);
   updatePuffs(dt);
@@ -1908,7 +1918,7 @@ function genLavaPoint(P, speed) {
   return { x: LV.genX, s: LV.genS, d: LV.u, w: P.width };
 }
 function addLavaPoint(z) {
-  const p = genLavaPoint(lavaParams(), speedFor(state.levelLV));
+  const p = genLavaPoint(lavaParams(), speedFor(state.levelLV) * SS.lava);
   p.z = z; LV.pts.push(p);
 }
 function writeRibbon() {
@@ -1940,7 +1950,7 @@ function writeRibbon() {
   lavaGeo.attributes.position.needsUpdate = lavaGeo.attributes.uv.needsUpdate = lavaGeo.attributes.color.needsUpdate = true;
 }
 function updateLava(dt) {
-  const speed = speedFor(state.levelLV), step = speed * dt;
+  const speed = speedFor(state.levelLV) * SS.lava, step = speed * dt;
   LV.t += dt;
   state.distance += step;
   LV.pts.forEach(p => { p.z += step; });
@@ -1987,7 +1997,7 @@ resetLava();
    animals there are per square metre. The animals stay the same size and never overlap. */
 const DA = CONFIG.dogAttack;
 const DAS = { dogs: [] };
-const daSpeed = lvl => DA.baseSpeed + DA.speedStep * lvl;
+const daSpeed = lvl => (DA.baseSpeed + DA.speedStep * lvl) * SS.dogattack;
 const daParams = () => DA.perDifficulty[state.difficulty] || DA.perDifficulty.easy;
 const daArea = () => {
   const k = state.scaleDA, c = state.shiftDA;
@@ -2236,8 +2246,8 @@ resetDogAttack();
    (+ a little). Hits flash the view red exactly like Heads Up!. */
 const GC = CONFIG.getOut, SC = CONFIG.storm;
 const PK = { pucks: [], stars: [], shooters: [], slowT: 0, starT: 0, nextStar: 3, spawnAcc: 0 };
-const goSpeed = () => GC.speedBase + GC.speedStep * state.levelGO;
-const stSpeed = () => speedFor(state.levelST);
+const goSpeed = () => (GC.speedBase + GC.speedStep * state.levelGO) * SS.goaway;
+const stSpeed = () => speedFor(state.levelST) * SS.storm;
 
 const pkMat = {
   puck: std(0x0c0d10, { roughness: 0.35 }),
