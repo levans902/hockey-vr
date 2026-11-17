@@ -36,6 +36,18 @@ Objects spawn 4 m in front of you at floor level and slide along the floor towar
 
 Medium, Hard and Pro always keep a path open, so every layout can be stickhandled by a good player. In Pro, a hidden open lane never gets objects. It must move after a short time, and any lane left empty for too long gets the next object, so standing in one lane doesn't work.
 
+### Toe Drag
+
+Flat L shapes lie on the floor and slide toward you one at a time. Seen from where you stand, the long leg runs up the lane and the foot sits at the end nearest you, and your puck line crosses the foot. As an L arrives, drag the puck around its toe. Nothing flashes or lights up, so you can keep your eyes up and read the shapes in your peripheral vision.
+
+| Shape setting | What you get |
+| --- | --- |
+| **BACKWARD L** | Every toe points left. |
+| **L** | Every toe points right. |
+| **MIXED** | Random, never more than two the same way in a row. |
+
+Switching between L and backward L swaps forehand and backhand drags, so the same setting covers right-handers and left-handers. The **SPACING − / +** buttons set the gap between Ls (1.2 to 4.0 m). The **SIZE ◀ / ▶** buttons pick **LARGE** (the adult size, 100%), **MEDIUM** (75%) or **SMALL** (55%); the whole L is scaled, and the foot still crosses your puck line. Both are saved. Speed 1 to 10 runs from 0.25 to 0.9 m/s. The panel counts the Ls that have passed you. Tunables are in `CONFIG.toeDrag` (`legLength`, `footLength`, `footFrac`, `sizes`, `speedMin`, `speedMax`, `spacingDefault`).
+
 ### Keep Away
 
 Opposing defencemen skate around a red **attack circle** on the floor, in front of and beside you, never behind you. Put your real puck in the circle. They always face the circle and skate forwards, backwards and sideways. At random times they set up, lunge at the circle, swing their stick, then back off and reset. Move and deke around their sticks to keep the puck away.
@@ -328,6 +340,7 @@ To change an asset, refer to it by name and function below. Each function builds
 | Puck | `puckGeo` + `pkMat.puck` | Duck!, Puck Storm |
 | Power-up star | `makeStar` | Puck Storm, Duck! |
 | Traffic stick | `makeTrafficStick` | Stick Traffic |
+| L shape (toe drag) | `makeLShape` | Toe Drag |
 
 ### Surfaces and textures
 
