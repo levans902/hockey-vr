@@ -13,7 +13,7 @@ Use the ◀ ▶ arrows at the top of the floating panel to switch modes. Each mo
 | **Endless Object Treadmill** (default) | Reading objects early and stickhandling around them across several lanes. |
 | **Keep Away** | Protecting the puck from opposing defencemen who skate around you and attack. |
 | **Insanity** | Toe drags and tight, fancy hands through dense clutter in one wide lane. |
-| **Heads Up!** | Stickhandling a wiggling zig-zag training aid while ducking cannonballs from a French bulldog. |
+| **Heads Up!** | Stickhandling around floor obstacles coming at you while ducking cannonballs from a French bulldog. |
 | **The Floor Is Lava** | Keeping your puck on a winding path that slides toward you across a lane of lava. |
 | **Duck!** | 1 to 5 hockey players slap pucks at you, aimed anywhere from your feet to your headset. Dodge them. |
 | **Puck Storm** | A constant flow of pucks at random heights and places, mixed with sparkling power-up stars. |
@@ -82,7 +82,7 @@ One lane, as wide as three treadmill lanes (1.65 m), packed with objects of ever
 
 ### Heads Up!
 
-An endless zig-zag stickhandling aid slides down the middle lane toward you: black pods joined by rods, like a real training aid. Its shape slowly breathes between the sharp zig-zag from the product photo and almost dead straight, with a small ripple from pod to pod, so you keep adjusting your hands.
+Single floor obstacles slide down the middle lane toward you. Each one is two black pods joined by a rod (one link of a training aid, on its own), laid at random angles, one or two side by side per row, with a few on the floor at once so you can dangle through and around them. They are not joined to each other.
 
 At the far end of the lane a French bulldog with a cannon strapped to its back wanders a little left, right and back and forth, with the odd hop, wagging its tail and twitching its ears. Every so often it plants its feet, barks, and the fuse on the cannon glows while the barrel swings to your head. Then it fires. Duck under the ball while you keep stickhandling.
 
@@ -168,7 +168,7 @@ The Treadmill uses all six. Insanity leaves out the dynamite and the tall, thin 
 - **Team bench:** a low, solid bench 1.2 m long
 - **Ice resurfacer:** 1.5 m long and 0.84 m wide, so exactly half the lane, always on the left or the right half and usually pointing at you. It is the rarest object.
 
-Keep Away uses full-size defencemen in red jerseys instead. Heads Up! uses a zig-zag aid of black pods and rods, a French bulldog and a cannon.
+Keep Away uses full-size defencemen in red jerseys instead. Heads Up! uses separate pod-and-rod floor pieces, a French bulldog and a cannon.
 
 ## Control panel
 
@@ -262,7 +262,7 @@ Everything adjustable is in the `CONFIG` object near the top of the script in `i
 | `keepAway.defenderScale` | How big the defenders look (1.0 is full size). |
 | `keepAway.puckOffset` | Where the game assumes your puck is in front of you. |
 | `keepAway.maxRadius`, `attackGap`, `perDifficulty` | Zone size, spacing between attacks, and each difficulty's defender count and aggression. |
-| `headsUp.aidSpacing`, `aidAmplitude`, `aidPeriod`, `aidPhasePerPod` | Heads Up!: gap between pods, how far they swing sideways at full zig-zag (0 is straight), seconds per breathing cycle, and how much the shape ripples. |
+| `headsUp.aidLength`, `aidRowMin`, `aidRowMax`, `aidTwoChance`, `aidSideX`, `aidJitter` | Heads Up!: length of each floor piece, distance between rows, chance of two pieces in a row, how far apart side by side pieces sit, and the random wobble. |
 | `headsUp.dogDistance`, `dogScale`, `dogRangeX`, `dogRangeZ`, `dogSpeed` | Heads Up!: how far away the bulldog is, how big it looks, and how much and how fast it wanders. |
 | `headsUp.ballRadius`, `ballSpeedBase`, `ballSpeedStep`, `arcHeight`, `hitRadius`, `aimNoise` | Heads Up!: cannonball size, speed, how much it lobs, how close counts as a hit, and shot inaccuracy. |
 | `lava.lavaWidth`, `startStraight`, `puckLine`, `pathFill` | The Floor Is Lava: width of the lava, how long the path is straight at the start, whether the puck line is shown, and how solid the path looks (0 is clear, 1 is solid slate; the bright edges always show). |
@@ -331,7 +331,8 @@ To change an asset, refer to it by name and function below. Each function builds
 
 | Asset | Function | Used in |
 |---|---|---|
-| Landing pod | `makePodTemplate` | Heads Up! |
+| Pod (one end of a floor piece) | `makePodTemplate` | Heads Up! |
+| Floor piece (two pods and a rod) | `makeAidPiece` | Heads Up! |
 | Dog (French bulldog) | `makeDogModel` | Heads Up! cannon, Dog Attack |
 | Shark | `makeShark` | Dog Attack ("SHARK" option) |
 | T-rex | `makeTrex` | Dog Attack ("T-REX" option) |
