@@ -71,7 +71,7 @@ The circle starts 3 ft in front of you. The **CIRCLE − / +** buttons move it c
 
 The guaranteed route through the clutter zig-zags across the lane and is kept narrow, and a guard watches every 0.35 m strip of the lane, adding a filler object whenever a strip has been empty too long. At the default density the longest empty stretch is about 3 to 8 m, instead of 40 to 50 m before, so there is no hiding in the middle.
 
-The **Zamboni** takes half the lane. It is placed on purpose: every 250 m or so of travel (about every 1 to 3 minutes, depending on speed) the open route swings out to one side and holds there, and a Zamboni goes in on the other half. That means it shows up at any density. It used to be picked at random like the other objects, but the winding route blocked almost every random spot, so it had practically stopped appearing. Tune with `insanity.zamEvery` (metres between Zambonis) and `zamFirst`.
+The **Zamboni** takes half the lane. It is placed on purpose: every 250 m or so of travel (about every 2 to 8 minutes, depending on speed) the open route swings out to one side and holds there, and a Zamboni goes in on the other half. That means it shows up at any density. It used to be picked at random like the other objects, but the winding route blocked almost every random spot, so it had practically stopped appearing. Tune with `insanity.zamEvery` (metres between Zambonis) and `zamFirst`.
 
 One lane, as wide as three treadmill lanes (1.65 m), packed with objects of every size. Instead of switching lanes, you have to work through the clutter with toe drags and fancy handles.
 
@@ -82,7 +82,7 @@ One lane, as wide as three treadmill lanes (1.65 m), packed with objects of ever
 
 ### Heads Up!
 
-Single floor obstacles slide down the middle lane toward you. Each one is two black pods joined by a rod (one link of a training aid, on its own), laid at random angles, one or two side by side per row, with a few on the floor at once so you can dangle through and around them. They are not joined to each other.
+Single floor obstacles slide down the middle lane toward you, one at a time. Each one is two black pods joined by a rod (one link of a training aid, on its own), laid at a random angle and spot, with a gap of 1.3 to 1.9 m between pieces so only one is ever crossing your line at once. They are not joined to each other.
 
 At the far end of the lane a French bulldog with a cannon strapped to its back wanders a little left, right and back and forth, with the odd hop, wagging its tail and twitching its ears. Every so often it plants its feet, barks, and the fuse on the cannon glows while the barrel swings to your head. Then it fires. Duck under the ball while you keep stickhandling.
 
@@ -203,11 +203,18 @@ The panel also shows a timer, the level and speed, and either how many objects h
 
 | Mode | Speed at level 1 | Speed at level 10 |
 | --- | --- | --- |
-| **Treadmill / Insanity** | 1.0 m/s | 3.7 m/s |
-| **Keep Away** (lunge speed) | 1.4 m/s | 3.7 m/s |
-| **Dog Attack** (dogs walking) | 0.3 m/s | 1.1 m/s |
-| **Heads Up!** (training aid) | 1.0 m/s | 3.7 m/s |
-| **The Floor Is Lava** (path) | 1.0 m/s | 3.7 m/s |
+| **Treadmill** | 1.0 m/s | 3.7 m/s |
+| **Keep Away** (lunge speed) | 0.95 m/s | 2.6 m/s |
+| **Insanity** | 0.5 m/s | 1.85 m/s |
+| **Heads Up!** (floor pieces) | 0.5 m/s | 1.85 m/s |
+| **The Floor Is Lava** (path) | 0.7 m/s | 2.6 m/s |
+| **Dog / Shark / T-Rex Attack** (walking) | 0.22 m/s | 0.82 m/s |
+| **Duck!** (pucks) | 1.65 m/s | 5.25 m/s |
+| **Puck Storm** (pucks) | 0.6 m/s | 2.2 m/s |
+| **Stick Traffic** | 0.3 m/s | 1.0 m/s |
+| **Toe Drag** | 0.25 m/s | 0.9 m/s |
+
+Each mode's speed is its own base speed multiplied by a per-mode scale in `CONFIG.speedScale` (Keep Away 0.7, Insanity 0.5, Heads Up! 0.5, Lava 0.7, Dog Attack 0.75, Duck! 0.5, Puck Storm 0.6). Change those numbers to speed a mode up or down without touching anything else.
 
 ## Requirements
 
@@ -262,7 +269,7 @@ Everything adjustable is in the `CONFIG` object near the top of the script in `i
 | `keepAway.defenderScale` | How big the defenders look (1.0 is full size). |
 | `keepAway.puckOffset` | Where the game assumes your puck is in front of you. |
 | `keepAway.maxRadius`, `attackGap`, `perDifficulty` | Zone size, spacing between attacks, and each difficulty's defender count and aggression. |
-| `headsUp.aidLength`, `aidRowMin`, `aidRowMax`, `aidTwoChance`, `aidSideX`, `aidJitter` | Heads Up!: length of each floor piece, distance between rows, chance of two pieces in a row, how far apart side by side pieces sit, and the random wobble. |
+| `headsUp.aidLength`, `aidRowMin`, `aidRowMax`, `aidSideX` | Heads Up!: length of each floor piece, the gap between pieces (keep it above about 1 m so only one is on your line at a time), and how far left or right a piece can sit. |
 | `headsUp.dogDistance`, `dogScale`, `dogRangeX`, `dogRangeZ`, `dogSpeed` | Heads Up!: how far away the bulldog is, how big it looks, and how much and how fast it wanders. |
 | `headsUp.ballRadius`, `ballSpeedBase`, `ballSpeedStep`, `arcHeight`, `hitRadius`, `aimNoise` | Heads Up!: cannonball size, speed, how much it lobs, how close counts as a hit, and shot inaccuracy. |
 | `lava.lavaWidth`, `startStraight`, `puckLine`, `pathFill` | The Floor Is Lava: width of the lava, how long the path is straight at the start, whether the puck line is shown, and how solid the path looks (0 is clear, 1 is solid slate; the bright edges always show). |
